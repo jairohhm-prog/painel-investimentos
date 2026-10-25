@@ -293,8 +293,9 @@ function renderBanner(){const b=document.getElementById('banner');const u=S.conf
   const pend=S.rendaFixa.filter(r=>/confirmar/i.test(r.obs));let h='';
   if(conflito)h+=`<div class="banner"><span>⚠ Os dados foram alterados em outro aparelho enquanto este estava aberto. Sua última alteração aqui <b>não</b> foi salva. Recarregue e refaça.</span><button class="small primary" onclick="recarregar()">Recarregar dados</button></div>`;
   if(dias==null||dias>30)h+=`<div class="banner"><span>${u?`Último backup em Excel há ${dias} dias (${dbr(u)}).`:'Nenhum backup em Excel ainda.'} O GitHub guarda o histórico, mas vale ter uma cópia no Drive.</span><button class="small primary" onclick="exportar()">Exportar agora</button></div>`;
-  if(pend.length)h+=`<div class="banner"><span>Pendente: confirmar a taxa de ${pend.map(r=>esc(r.nome)).join(' e ')} (aba Renda fixa &amp; Caixa).</span></div>`;
+  if(pend.length)h+=`<div class="banner"><span>Pendente: confirmar a taxa de ${pend.map(r=>`${esc(r.nome)} (IPCA + ${nf(r.taxa)}%)`).join(' e ')}. Se a taxa já está certa, confirme aqui.</span><button class="small primary" onclick="confirmarTaxas()">✓ Taxas conferidas</button></div>`;
   b.innerHTML=h}
+function confirmarTaxas(){S.rendaFixa.forEach(r=>{if(/confirmar/i.test(r.obs))r.obs=''});save();render();toast('Taxas confirmadas')}
 function barra(atual,meta,cor){const max=Math.max(atual,meta,0.0001)*1.15;return `<div class="bar"><i style="width:${Math.min(100,atual/max*100)}%;background:${cor}"></i><b style="left:${Math.min(100,meta/max*100)}%" title="Meta"></b></div>`}
 
 function rGeral(T){const el=document.getElementById('s-geral');const M=S.config.metas;const al=S.config.alerta/100;
@@ -356,10 +357,10 @@ function rRF(T){let tr='';S.rendaFixa.forEach(r=>{const v=valorRF(r);
   <tr><th>Nome</th><th class="l">Grupo</th><th class="l">Indexador</th><th>Taxa</th><th>Valor base</th><th class="l">Data base</th><th>Valor atual</th><th class="l">Obs.</th><th></th></tr>${tr}
   <tr class="tot"><td>Total</td><td></td><td></td><td></td><td></td><td></td><td>${brl(T.cls.rf+T.cls.caixa)}</td><td></td><td></td></tr></table></div>
   <div class="btns" style="margin-top:10px"><button id="addRF">+ Adicionar item</button></div>
-  <div class="note"><b>CDI</b>: taxa em % do CDI, corrige pelo CDI diário do Banco Central desde a data base. <b>IPCA</b>: taxa real (IPCA + x% a.a.), corrige pelo IPCA mensal do Banco Central + taxa pro rata — estimativa na curva, não é marcação a mercado. <b>MANUAL</b>: valor fixo que você atualiza. <b>USD</b>: valor base em dólares, convertido pelo dólar do dia.<br>Para atualizar um saldo pelo extrato, troque o valor base e coloque a data do extrato.</div></div>`;
+  <div class="note">As alterações nesta tabela salvam sozinhas ao sair do campo (Tab, Enter ou clique fora) — o status no topo mostra "Salvo ✓".<br><b>CDI</b>: taxa em % do CDI, corrige pelo CDI diário do Banco Central desde a data base. <b>IPCA</b>: taxa real (IPCA + x% a.a.), corrige pelo IPCA mensal do Banco Central + taxa pro rata — estimativa na curva, não é marcação a mercado. <b>MANUAL</b>: valor fixo que você atualiza. <b>USD</b>: valor base em dólares, convertido pelo dólar do dia.<br>Para atualizar um saldo pelo extrato, troque o valor base e coloque a data do extrato.</div></div>`;
   const s=document.getElementById('s-rf');
   s.querySelectorAll('tr[data-id] [data-f]').forEach(inp=>inp.onchange=async()=>{const r=S.rendaFixa.find(x=>x.id===inp.closest('tr').dataset.id);const f=inp.dataset.f;
-    r[f]=['taxa','valorBase'].includes(f)?+inp.value:inp.value;
+    r[f]=['taxa','valorBase'].includes(f)?+inp.value:inp.value;if(f==='taxa'&&/confirmar/i.test(r.obs))r.obs='';toast('Alteração salva');
     if((f==='dataBase'||f==='indexador')&&r.dataBase<HOJE()){save();await atualizar();return}save();render()});
   s.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{if(await confirmar('Remover este item?')){S.rendaFixa=S.rendaFixa.filter(x=>x.id!==b.dataset.del);save();render()}});
   document.getElementById('addRF').onclick=()=>{S.rendaFixa.push({id:uid(),nome:'Novo item',grupo:'rf',indexador:'MANUAL',taxa:0,valorBase:0,dataBase:HOJE(),obs:''});save();render()};
