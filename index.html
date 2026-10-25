@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Painel de Investimentos</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#f6f5f2;--card:#ffffff;--fg:#1d1c1a;--muted:#6f6b64;--line:#e4e1da;--soft:#f0eee9;
+  --accent:#1f5f8b;--accent-soft:#e3eef6;--pos:#1d7a46;--neg:#b23a32;--warn:#a86a00;--warn-soft:#fff4dc;
+  --c-rf:#4a7fa8;--c-caixa:#8fb3cf;--c-acoes:#c26b3a;--c-fii:#8a6bb3;--c-cripto:#d9a400;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#161615;--card:#201f1d;--fg:#ecebe7;--muted:#a19d95;--line:#33312e;--soft:#2a2926;
+  --accent:#6fb0dc;--accent-soft:#1e3342;--pos:#5cc98a;--neg:#ef7d73;--warn:#e8b04a;--warn-soft:#3a2f17;
+}}
+:root[data-theme="dark"]{
+  --bg:#161615;--card:#201f1d;--fg:#ecebe7;--muted:#a19d95;--line:#33312e;--soft:#2a2926;
+  --accent:#6fb0dc;--accent-soft:#1e3342;--pos:#5cc98a;--neg:#ef7d73;--warn:#e8b04a;--warn-soft:#3a2f17;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 "Segoe UI",system-ui,-apple-system,sans-serif}
+.wrap{max-width:1240px;margin:0 auto;padding:16px}
+header.top{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;justify-content:space-between;margin-bottom:12px}
+h1{font-size:15px;font-weight:600;margin:0 0 4px;color:var(--muted);letter-spacing:.02em}
+.big{font-size:34px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.sub{color:var(--muted);font-size:13px}
+.pos{color:var(--pos)}.neg{color:var(--neg)}.muted{color:var(--muted)}.warn{color:var(--warn)}
+.btns{display:flex;gap:8px;flex-wrap:wrap}
+button,.btn{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--fg);padding:7px 12px;border-radius:8px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.small{padding:3px 8px;font-size:12px}
+button.danger{color:var(--neg)}
+.banner{background:var(--warn-soft);border:1px solid var(--warn);color:var(--fg);padding:9px 12px;border-radius:8px;margin-bottom:12px;display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}
+nav.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:16px;overflow-x:auto}
+nav.tabs button{border:none;background:none;border-bottom:2px solid transparent;border-radius:0;padding:9px 12px;color:var(--muted);white-space:nowrap}
+nav.tabs button.on{color:var(--fg);border-bottom-color:var(--accent);font-weight:600}
+.grid{display:grid;gap:12px}
+.kpis{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+.card h2{font-size:14px;margin:0 0 10px;font-weight:600}
+.kpi .v{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+.kpi .l{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{font-size:12px;color:var(--muted);font-weight:600;background:var(--soft);position:sticky;top:0}
+th:first-child,td:first-child{text-align:left}
+td.l,th.l{text-align:left}
+tr.tot td{font-weight:700;background:var(--soft)}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--card)}
+.tbl table{min-width:640px}
+.bar{position:relative;height:10px;background:var(--soft);border-radius:5px;min-width:120px}
+.bar i{position:absolute;left:0;top:0;bottom:0;border-radius:5px}
+.bar b{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--fg)}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:middle}
+.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:10px;background:var(--soft);color:var(--muted)}
+.tag.warn{background:var(--warn-soft);color:var(--warn)}
+.tag.neg{background:transparent;border:1px solid var(--neg);color:var(--neg)}
+.tag.pos{background:transparent;border:1px solid var(--pos);color:var(--pos)}
+form.row{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}
+label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted)}
+input,select{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:7px;padding:6px 8px;min-width:0}
+input:focus,select:focus{outline:2px solid var(--accent-soft);border-color:var(--accent)}
+td input{width:90px;padding:3px 6px;text-align:right}
+td input.w{width:140px;text-align:left}
+section{display:none}section.on{display:block}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:820px){.split{grid-template-columns:1fr}.big{font-size:28px}}
+.note{font-size:12px;color:var(--muted);margin-top:8px}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px;z-index:10}
+.modal .card{max-width:440px;width:100%}
+.chart svg{width:100%;height:auto;display:block}
+.chart text{fill:var(--muted);font-size:11px}
+.toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:13px;z-index:20}
+h3{font-size:13px;margin:16px 0 8px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>PATRIMÔNIO TOTAL</h1>
+      <div class="big" id="hTotal">—</div>
+      <div class="sub" id="hDia"></div>
+    </div>
+    <div style="text-align:right">
+      <div class="sub" id="hStatus">Carregando cotações…</div><div class="sub"><span id="hSave" class="muted"></span></div>
+      <div class="btns" style="margin-top:6px;justify-content:flex-end">
+        <button id="bRefresh" class="primary">↻ Atualizar cotações</button>
+        <button id="bExport">⬇ Exportar Excel</button>
+        <button id="bImport">⬆ Importar Excel</button>
+        <input type="file" id="fImport" accept=".xlsx" hidden>
+      </div>
+    </div>
+  </header>
+  <div id="banner"></div>
+  <nav class="tabs" id="tabs">
+    <button data-tab="geral" class="on">Visão geral</button>
+    <button data-tab="ativos">Ativos</button>
+    <button data-tab="rf">Renda fixa &amp; Caixa</button>
+    <button data-tab="lanc">Lançamentos</button>
+    <button data-tab="prov">Proventos</button>
+    <button data-tab="aporte">Aporte</button>
+    <button data-tab="evol">Evolução</button>
+    <button data-tab="cfg">Configurações</button>
+  </nav>
+
+  <section id="s-geral" class="on"></section>
+  <section id="s-ativos"></section>
+  <section id="s-rf"></section>
+  <section id="s-lanc"></section>
+  <section id="s-prov"></section>
+  <section id="s-aporte"></section>
+  <section id="s-evol"></section>
+  <section id="s-cfg"></section>
+</div>
+
+<script>
+/* ================= ESTADO ================= */
+const KEY='painelInvest_v1';
+const HOJE=()=>new Date().toISOString().slice(0,10);
+const CLASSES={rf:{n:'Renda Fixa',c:'var(--c-rf)'},caixa:{n:'Caixa & Recebíveis',c:'var(--c-caixa)'},acoes:{n:'Ações',c:'var(--c-acoes)'},fii:{n:'FIIs',c:'var(--c-fii)'},cripto:{n:'Cripto',c:'var(--c-cripto)'}};
+// Grupos de meta: Renda Fixa + Caixa compartilham a mesma meta
+const GRUPOS={rfc:{n:'Renda Fixa + Caixa',cls:['rf','caixa'],c:'var(--c-rf)'},acoes:{n:'Ações',cls:['acoes'],c:'var(--c-acoes)'},fii:{n:'FIIs',cls:['fii'],c:'var(--c-fii)'},cripto:{n:'Cripto',cls:['cripto'],c:'var(--c-cripto)'}};
+
+function uid(){return Math.random().toString(36).slice(2,10)}
+function seed(){
+  const d=HOJE();
+  const A=(ticker,nome,classe,peso,setor,ti,ts,tj,cgId)=>({id:uid(),ticker,nome,classe,peso,setor:setor||'',tetoInter:ti||0,tetoSuno:ts||0,tetoJairo:tj||0,cgId:cgId||''});
+  const ativos=[
+    A('B3SA3','B3','acoes',7,'Financeiro e Outros',0,12,0),
+    A('INBR32','Banco Inter','acoes',1,'Financeiro e Outros'),
+    A('EGIE3','Engie Brasil','acoes',8,'Energia',48,50,0),
+    A('FLRY3','Fleury','acoes',6,'Saúde',19,0,0),
+    A('ITSA4','Itaúsa','acoes',7,'Financeiro e Outros',11,9.52,0),
+    A('KLBN11','Klabin','acoes',6,'Material base',29,28,0),
+    A('LEVE3','Mahle Metal Leve','acoes',6,'Consumo Cíclico',0,26,0),
+    A('MDIA3','M. Dias Branco','acoes',5,'Consumo não Cíclico'),
+    A('MGLU3','Magazine Luiza','acoes',3,''),
+    A('AUAU3','Petz/Cobasi (ex-PETZ3)','acoes',1,'Consumo Cíclico',0,0,10),
+    A('VIVA3','Vivara','acoes',7,'Consumo Cíclico',25,25.65,25.65),
+    A('WEGE3','WEG','acoes',12,'Bens Industriais',0,0,40),
+    A('XPML11','XP Malls','fii',25),
+    A('VRTA11','Fator Verità','fii',25),
+    A('RBRP11','RBR Properties','fii',25),
+    A('MCCI11','Mauá Capital Recebíveis','fii',25),
+    A('BTC','Bitcoin','cripto',90,'','','','', 'bitcoin'),
+    A('ETH','Ethereum','cripto',4,'','','','', 'ethereum'),
+    A('SOL','Solana','cripto',4,'','','','', 'solana'),
+    A('ENA','Ethena','cripto',1,'','','','', 'ethena'),
+    A('DOG','Dog (Bitcoin)','cripto',1,'','','','', 'dog-go-to-the-moon-rune'),
+  ];
+  const q={B3SA3:781,INBR32:100,EGIE3:236,FLRY3:620,ITSA4:1068,KLBN11:400,LEVE3:191,MDIA3:147,MGLU3:378,AUAU3:743,VIVA3:386,WEGE3:602,XPML11:71,VRTA11:51,RBRP11:63,MCCI11:72,BTC:0.96841514,ETH:1.021,SOL:21.79,ENA:2333,DOG:255602.55898475};
+  const lancamentos=Object.entries(q).map(([t,n])=>({id:uid(),data:d,ticker:t,tipo:'C',qtd:n,preco:null,custos:0,obs:'Saldo inicial',inicial:true}));
+  const R=(nome,grupo,indexador,taxa,valorBase,obs)=>({id:uid(),nome,grupo,indexador,taxa,valorBase,dataBase:d,obs:obs||''});
+  const rendaFixa=[
+    R('CDB Inter','rf','CDI',100,82641.15),
+    R('IPCA+ 2029 (Inter)','rf','IPCA',6.78,4553.33,'Taxa provisória — confirmar'),
+    R('IPCA+ 2045 (Inter)','rf','IPCA',6.73,11074.29,'Taxa provisória — confirmar'),
+    R('Conta Santander','caixa','MANUAL',0,9000),
+    R('Conta Inter','caixa','MANUAL',0,0),
+    R('USDT / USDC (carteira)','caixa','USD',0,6226.67,'Valor em dólares'),
+    R('Empréstimo Drielle','caixa','MANUAL',0,24700),
+    R('Empréstimo Mãe','caixa','MANUAL',0,5000),
+    R('Empréstimo Família','caixa','MANUAL',0,16600),
+  ];
+  return {version:1,config:{brapiToken:'',metas:{rfc:15,acoes:10,fii:10,cripto:65},alerta:5,ultimoBackup:null,inicio:d},
+    ativos,lancamentos,proventos:[],rendaFixa,historico:[],cache:{quotes:{},usd:null,cdi:[],ipca:[],atualizadoEm:null}};
+}
+let S;
+/* ===== Armazenamento: arquivo dados.json num repositório privado do GitHub =====
+   Neste aparelho ficam só: a conexão (usuário/repositório/chave) e o cache de cotações. */
+const LS=(k,v)=>{try{if(v===undefined)return JSON.parse(localStorage.getItem(k));if(v===null)localStorage.removeItem(k);else localStorage.setItem(k,JSON.stringify(v))}catch(e){return null}};
+let GH=LS(KEY+'_gh');let shaAtual=null;let salvando=false,pendente=false,conflito=false;
+const ARQ='dados.json';
+function b64enc(str){const b=new TextEncoder().encode(str);let s='';for(let i=0;i<b.length;i+=8192)s+=String.fromCharCode.apply(null,b.subarray(i,i+8192));return btoa(s)}
+function b64dec(b){const bin=atob(b.replace(/\s/g,''));return new TextDecoder().decode(Uint8Array.from(bin,c=>c.charCodeAt(0)))}
+function ghURL(){return `https://api.github.com/repos/${encodeURIComponent(GH.owner)}/${encodeURIComponent(GH.repo)}/contents/${ARQ}`}
+function ghHdr(){return {Authorization:'Bearer '+GH.token,Accept:'application/vnd.github+json'}}
+async function ghLer(){const r=await fetch(ghURL(),{headers:ghHdr(),cache:'no-store'});
+  if(r.status===404)return null;if(r.status===401||r.status===403)throw new Error('Chave de acesso inválida ou sem permissão ('+r.status+')');if(!r.ok)throw new Error('GitHub '+r.status);
+  const j=await r.json();shaAtual=j.sha;return JSON.parse(b64dec(j.content))}
+function setSave(t,cls){const e=document.getElementById('hSave');if(e){e.textContent=t;e.className=cls||'muted'}}
+function payload(){const {cache,...rest}=S;return JSON.stringify(rest,null,1)}
+async function gravar(){if(!GH||conflito)return;if(salvando){pendente=true;return}salvando=true;setSave('Salvando…');
+  try{const body={message:'Painel: atualização '+new Date().toLocaleString('pt-BR'),content:b64enc(payload())};if(shaAtual)body.sha=shaAtual;
+    const r=await fetch(ghURL(),{method:'PUT',headers:{...ghHdr(),'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(r.status===409||r.status===422){conflito=true;setSave('Conflito','neg');renderBanner();return}
+    if(!r.ok)throw new Error('GitHub '+r.status);const j=await r.json();shaAtual=j.content.sha;setSave('Salvo ✓ '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),'pos');
+  }catch(e){setSave('Erro ao salvar — '+e.message,'neg');toast('Não salvou no GitHub: '+e.message)}
+  finally{salvando=false;if(pendente&&!conflito){pendente=false;gravar()}}}
+let tSave=null;
+function save(){LS(KEY+'_cache',S.cache);if(!GH)return;setSave('Alterações pendentes…');clearTimeout(tSave);tSave=setTimeout(gravar,800)}
+async function recarregar(){conflito=false;try{const d=await ghLer();if(d){S={...d,cache:S.cache}};render();toast('Dados recarregados do GitHub')}catch(e){toast(e.message)}}
+
+/* ================= FORMATAÇÃO ================= */
+const nf=(v,d=2)=>v==null||isNaN(v)?'—':v.toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});
+const brl=v=>v==null||isNaN(v)?'—':v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const brlP=v=>v==null||isNaN(v)?'—':v.toLocaleString('pt-BR',{style:'currency',currency:'BRL',minimumFractionDigits:2,maximumFractionDigits:v<1?6:2});
+const usd=v=>v==null||isNaN(v)?'—':'US$ '+nf(v,v<1?6:2);
+const pct=(v,d=1)=>v==null||isNaN(v)||!isFinite(v)?'—':(v*100).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d})+'%';
+const sgn=v=>v>0?'pos':v<0?'neg':'';
+const qtdf=(v,cls)=>cls==='cripto'?nf(v,v<10?8:2):nf(v,0);
+const dbr=s=>s?s.split('-').reverse().join('/'):'';
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function toast(m){const t=document.createElement('div');t.className='toast';t.textContent=m;document.body.appendChild(t);setTimeout(()=>t.remove(),2600)}
+function confirmar(msg){return new Promise(res=>{const m=document.createElement('div');m.className='modal';m.innerHTML=`<div class="card"><p>${esc(msg)}</p><div class="btns" style="justify-content:flex-end"><button data-r="0">Cancelar</button><button class="primary" data-r="1">Confirmar</button></div></div>`;m.onclick=e=>{const r=e.target.dataset.r;if(r!=null){m.remove();res(r==='1')}};document.body.appendChild(m)})}
+
+/* ================= COTAÇÕES ================= */
+async function getJSON(u){const r=await fetch(u);if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}
+async function serieBCB(u){const j=await getJSON(u);return Array.isArray(j)?j:[]} // BCB devolve {erro} quando não há dado no período
+async function pool(items,n,fn){const out=[];let i=0;await Promise.all(Array.from({length:n},async()=>{while(i<items.length){const k=i++;try{out[k]=await fn(items[k])}catch(e){out[k]=null}}}));return out}
+function dataBCB(s){return s.split('-').reverse().join('/')}
+async function atualizar(){
+  const st=document.getElementById('hStatus');st.textContent='Atualizando cotações…';
+  const erros=[];const Q=S.cache.quotes;
+  const b3=S.config.brapiToken?S.ativos.filter(a=>a.classe!=='cripto'):[];if(!S.config.brapiToken)erros.push('ações/FIIs (falta a chave brapi em Configurações)');
+  await pool(b3,4,async a=>{
+    try{const j=await getJSON(`https://brapi.dev/api/quote/${encodeURIComponent(a.ticker)}?token=${encodeURIComponent(S.config.brapiToken)}`);
+      const r=j.results&&j.results[0];if(!r||r.regularMarketPrice==null)throw 0;
+      Q[a.ticker]={p:r.regularMarketPrice,chg:(r.regularMarketChangePercent||0)/100,t:Date.now(),moeda:'BRL'};
+    }catch(e){erros.push(a.ticker)}
+  });
+  const cr=S.ativos.filter(a=>a.classe==='cripto'&&a.cgId);
+  try{const ids=[...new Set([...cr.map(a=>a.cgId),'tether'])].join(',');
+    const j=await getJSON(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`);
+    cr.forEach(a=>{const x=j[a.cgId];if(x&&x.usd!=null)Q[a.ticker]={p:x.usd,chg:(x.usd_24h_change||0)/100,t:Date.now(),moeda:'USD'};else erros.push(a.ticker)});
+  }catch(e){erros.push('Cripto (CoinGecko)')}
+  try{const j=await getJSON('https://economia.awesomeapi.com.br/json/last/USD-BRL');S.cache.usd={v:+j.USDBRL.bid,chg:(+j.USDBRL.pctChange||0)/100,t:Date.now()}}catch(e){erros.push('Dólar')}
+  // Índices para a renda fixa
+  const base=S.rendaFixa.reduce((m,r)=>r.dataBase<m?r.dataBase:m,HOJE());
+  if(S.rendaFixa.some(r=>r.indexador==='CDI')){try{S.cache.cdi=await serieBCB(`https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados?formato=json&dataInicial=${dataBCB(base)}&dataFinal=${dataBCB(HOJE())}`)}catch(e){if(base<HOJE())erros.push('CDI')}}
+  if(S.rendaFixa.some(r=>r.indexador==='IPCA')){try{const b=new Date(base);b.setMonth(b.getMonth()-1);S.cache.ipca=await serieBCB(`https://api.bcb.gov.br/dados/serie/bcdata.sgs.433/dados?formato=json&dataInicial=${dataBCB(b.toISOString().slice(0,10))}&dataFinal=${dataBCB(HOJE())}`)}catch(e){S.cache.ipca=S.cache.ipca||[];if(diasEntre(base,HOJE())>45)erros.push('IPCA')}}
+  // preencher preço dos saldos iniciais
+  let preencheu=false;S.lancamentos.forEach(l=>{if(l.inicial&&l.preco==null&&Q[l.ticker]){preencheu=true;const a=ativo(l.ticker);l.preco=Q[l.ticker].p*(a&&a.classe==='cripto'?(S.cache.usd?.v||0):1);l.precoAuto=true}});
+  S.cache.atualizadoEm=Date.now();
+  const mud=snapshot();if(mud||preencheu)save();else LS(KEY+'_cache',S.cache);render();
+  st.innerHTML=`Cotações de ${new Date().toLocaleString('pt-BR')}`+(erros.length?` · <span class="warn">sem cotação: ${esc(erros.join(', '))}</span>`:'');
+}
+
+/* ================= CÁLCULOS ================= */
+const ativo=t=>S.ativos.find(a=>a.ticker===t);
+function precoBRL(a){const q=S.cache.quotes[a.ticker];if(!q)return null;return a.classe==='cripto'?q.p*(S.cache.usd?.v||NaN):q.p}
+function posicoes(){
+  const P={};S.ativos.forEach(a=>P[a.ticker]={a,qtd:0,custo:0,realizado:0,prov:0});
+  [...S.lancamentos].sort((x,y)=>x.data.localeCompare(y.data)).forEach(l=>{
+    const p=P[l.ticker];if(!p)return;const pr=l.preco||0;
+    if(l.tipo==='C'){p.custo+=l.qtd*pr+(+l.custos||0);p.qtd+=l.qtd}
+    else{const pm=p.qtd?p.custo/p.qtd:0;p.realizado+=l.qtd*(pr-pm)-(+l.custos||0);p.custo-=pm*l.qtd;p.qtd-=l.qtd}
+  });
+  S.proventos.forEach(v=>{if(P[v.ticker])P[v.ticker].prov+=+v.valor||0});
+  Object.values(P).forEach(p=>{p.preco=precoBRL(p.a);p.valor=p.preco==null?null:p.qtd*p.preco;p.pm=p.qtd>1e-12?p.custo/p.qtd:null;
+    const q=S.cache.quotes[p.a.ticker];p.chg=q?q.chg:null;p.varDia=p.valor!=null&&p.chg!=null?p.valor-p.valor/(1+p.chg):0;
+    p.resultado=p.valor!=null?p.valor-p.custo+p.prov+p.realizado:null;p.resPct=p.custo>0&&p.resultado!=null?p.resultado/p.custo:null;
+    const t=+p.a.tetoJairo||+p.a.tetoSuno||+p.a.tetoInter||0;p.teto=t||null;p.upside=t&&p.preco?t/p.preco-1:null;
+    p.acimaTeto=p.a.classe!=='cripto'&&t>0&&p.preco!=null&&p.preco>t;});
+  return P;
+}
+function diasEntre(a,b){return Math.round((new Date(b)-new Date(a))/864e5)}
+function valorRF(r){
+  if(r.indexador==='USD')return (+r.valorBase||0)*(S.cache.usd?.v||NaN);
+  if(r.indexador==='MANUAL')return +r.valorBase||0;
+  if(r.indexador==='CDI'){let f=1;(Array.isArray(S.cache.cdi)?S.cache.cdi:[]).forEach(x=>{const d=x.data.split('/').reverse().join('-');if(d>r.dataBase)f*=1+(+x.valor/100)*(r.taxa/100)});return r.valorBase*f}
+  if(r.indexador==='IPCA'){let f=1;const bm=r.dataBase.slice(0,7);(Array.isArray(S.cache.ipca)?S.cache.ipca:[]).forEach(x=>{const m=x.data.split('/');const ym=m[2]+'-'+m[1];if(ym>bm)f*=1+(+x.valor/100)});
+    const dias=Math.max(0,diasEntre(r.dataBase,HOJE()));return r.valorBase*f*Math.pow(1+r.taxa/100,dias/365)}
+  return +r.valorBase||0;
+}
+function totais(){
+  const P=posicoes();const cls={rf:0,caixa:0,acoes:0,fii:0,cripto:0};let varDia=0,falta=0;
+  Object.values(P).forEach(p=>{if(p.valor!=null){cls[p.a.classe]+=p.valor;varDia+=p.varDia}else if(p.qtd>0)falta++});
+  S.rendaFixa.forEach(r=>{const v=valorRF(r);if(!isNaN(v))cls[r.grupo]+=v});
+  const total=Object.values(cls).reduce((a,b)=>a+b,0);
+  const grp={};Object.entries(GRUPOS).forEach(([k,g])=>grp[k]=g.cls.reduce((s,c)=>s+cls[c],0));
+  return {P,cls,grp,total,varDia,falta};
+}
+function snapshot(){const T=totais();if(T.falta||!T.total)return;const d=HOJE();const reg={data:d,total:+T.total.toFixed(2),...Object.fromEntries(Object.entries(T.cls).map(([k,v])=>[k,+v.toFixed(2)]))};
+  const i=S.historico.findIndex(h=>h.data===d);const novo=i<0;if(!novo&&Date.now()-(S.snapAt||0)<3600e3)return false;
+  if(novo)S.historico.push(reg);else S.historico[i]=reg;S.historico.sort((a,b)=>a.data.localeCompare(b.data));S.snapAt=Date.now();return true}
+
+/* ================= RENDER ================= */
+let aba='geral';
+function render(){const T=totais();
+  document.getElementById('hTotal').textContent=brl(T.total);
+  const base=T.total-T.varDia;
+  document.getElementById('hDia').innerHTML=`Variação do dia (bolsa + cripto 24h): <b class="${sgn(T.varDia)}">${T.varDia>=0?'+':''}${brl(T.varDia)} (${pct(base?T.varDia/base:0,2)})</b> · Dólar ${S.cache.usd?nf(S.cache.usd.v,4):'—'}`;
+  renderBanner();
+  ({geral:rGeral,ativos:rAtivos,rf:rRF,lanc:rLanc,prov:rProv,aporte:rAporte,evol:rEvol,cfg:rCfg})[aba](T);
+}
+function renderBanner(){const b=document.getElementById('banner');const u=S.config.ultimoBackup;const dias=u?diasEntre(u,HOJE()):null;
+  const pend=S.rendaFixa.filter(r=>/confirmar/i.test(r.obs));let h='';
+  if(conflito)h+=`<div class="banner"><span>⚠ Os dados foram alterados em outro aparelho enquanto este estava aberto. Sua última alteração aqui <b>não</b> foi salva. Recarregue e refaça.</span><button class="small primary" onclick="recarregar()">Recarregar dados</button></div>`;
+  if(dias==null||dias>30)h+=`<div class="banner"><span>${u?`Último backup em Excel há ${dias} dias (${dbr(u)}).`:'Nenhum backup em Excel ainda.'} O GitHub guarda o histórico, mas vale ter uma cópia no Drive.</span><button class="small primary" onclick="exportar()">Exportar agora</button></div>`;
+  if(pend.length)h+=`<div class="banner"><span>Pendente: confirmar a taxa de ${pend.map(r=>esc(r.nome)).join(' e ')} (aba Renda fixa &amp; Caixa).</span></div>`;
+  b.innerHTML=h}
+function barra(atual,meta,cor){const max=Math.max(atual,meta,0.0001)*1.15;return `<div class="bar"><i style="width:${Math.min(100,atual/max*100)}%;background:${cor}"></i><b style="left:${Math.min(100,meta/max*100)}%" title="Meta"></b></div>`}
+
+function rGeral(T){const el=document.getElementById('s-geral');const M=S.config.metas;const al=S.config.alerta/100;
+  let rows='';Object.entries(GRUPOS).forEach(([k,g])=>{const v=T.grp[k];const a=T.total?v/T.total:0;const m=(M[k]||0)/100;const d=a-m;
+    const status=Math.abs(d)>al?`<span class="tag warn">${d>0?'acima':'abaixo'} da meta</span>`:'<span class="tag">dentro</span>';
+    rows+=`<tr><td><span class="dot" style="background:${g.c}"></span>${g.n}</td><td>${brl(v)}</td><td>${pct(a)}</td><td>${pct(m,0)}</td><td class="${Math.abs(d)>al?'warn':''}">${d>0?'+':''}${pct(d)}</td><td>${barra(a,m,g.c)}</td><td>${status}</td></tr>`;
+    if(k==='rfc')g.cls.forEach(c=>rows+=`<tr><td class="muted" style="padding-left:28px">${CLASSES[c].n}</td><td class="muted">${brl(T.cls[c])}</td><td class="muted">${pct(T.total?T.cls[c]/T.total:0)}</td><td></td><td></td><td></td><td></td></tr>`);
+  });
+  const Ps=Object.values(T.P).filter(p=>p.qtd>0&&p.chg!=null).sort((a,b)=>b.chg-a.chg);
+  const mv=arr=>arr.map(p=>`<tr><td>${p.a.ticker}</td><td class="${sgn(p.chg)}">${pct(p.chg,2)}</td><td class="${sgn(p.varDia)}">${brl(p.varDia)}</td></tr>`).join('');
+  const btc=T.P.BTC;const totBTC=btc&&btc.preco?T.total/btc.preco:null;
+  const prov12=S.proventos.filter(v=>diasEntre(v.data,HOJE())<=365).reduce((s,v)=>s+(+v.valor||0),0);
+  el.innerHTML=`<div class="grid kpis">
+    <div class="card kpi"><div class="l">Patrimônio</div><div class="v">${brl(T.total)}</div></div>
+    <div class="card kpi"><div class="l">Variação do dia</div><div class="v ${sgn(T.varDia)}">${brl(T.varDia)}</div></div>
+    <div class="card kpi"><div class="l">Patrimônio em BTC</div><div class="v">${totBTC?nf(totBTC,4)+' ₿':'—'}</div></div>
+    <div class="card kpi"><div class="l">Proventos 12 meses</div><div class="v">${brl(prov12)}</div></div>
+  </div>
+  <div class="card" style="margin-top:12px"><h2>Alocação por classe — atual × meta</h2><div class="tbl" style="border:none"><table>
+    <tr><th>Classe</th><th>Valor</th><th>Atual</th><th>Meta</th><th>Desvio</th><th class="l">Atual (barra) × meta (traço)</th><th class="l">Status</th></tr>${rows}
+    <tr class="tot"><td>Total</td><td>${brl(T.total)}</td><td>100%</td><td>${pct(Object.values(M).reduce((a,b)=>a+ +b,0)/100,0)}</td><td></td><td></td><td></td></tr></table></div>
+    <div class="note">Alerta quando o desvio passa de ±${S.config.alerta} pontos percentuais. Caixa & Recebíveis conta dentro da meta de Renda Fixa.</div></div>
+  <div class="split" style="margin-top:12px">
+    <div class="card"><h2>Maiores altas do dia</h2><table>${mv(Ps.slice(0,5))||'<tr><td class="muted">Sem cotações</td></tr>'}</table></div>
+    <div class="card"><h2>Maiores quedas do dia</h2><table>${mv(Ps.slice(-5).reverse())||'<tr><td class="muted">Sem cotações</td></tr>'}</table></div>
+  </div>`;
+}
+
+function tabelaClasse(T,cls){
+  const ps=Object.values(T.P).filter(p=>p.a.classe===cls&&(p.qtd>0||p.a.peso>0));
+  const tot=ps.reduce((s,p)=>s+(p.valor||0),0);const somaPeso=ps.reduce((s,p)=>s+(+p.a.peso||0),0);
+  const cri=cls==='cripto';let tr='';let tRes=0,tProv=0,tVar=0;
+  ps.sort((a,b)=>(b.valor||0)-(a.valor||0)).forEach(p=>{const at=tot?(p.valor||0)/tot:0;const mt=somaPeso?(+p.a.peso||0)/somaPeso:0;const q=S.cache.quotes[p.a.ticker];
+    tRes+=p.resultado||0;tProv+=p.prov;tVar+=p.varDia||0;
+    tr+=`<tr><td><b>${esc(p.a.ticker)}</b> <span class="muted">${esc(p.a.nome)}</span>${p.acimaTeto?' <span class="tag neg">acima do teto</span>':''}</td>
+    <td>${qtdf(p.qtd,cls)}</td><td>${cri?usd(q?.p):brlP(p.preco)}</td><td class="${sgn(p.chg)}">${pct(p.chg,2)}</td><td>${brl(p.valor)}</td>
+    <td>${pct(at)}</td><td>${pct(mt)}</td><td class="${sgn(mt-at)}">${pct(mt-at)}</td><td>${p.pm!=null?brlP(p.pm):'—'}</td>
+    <td>${p.prov?brl(p.prov):'—'}</td><td class="${sgn(p.resultado)}">${brl(p.resultado)} <span class="muted">${pct(p.resPct)}</span></td>
+    ${cri?'':`<td>${p.teto?brl(p.teto):'—'}</td><td class="${sgn(p.upside)}">${pct(p.upside)}</td>`}</tr>`});
+  return `<div class="tbl"><table><tr><th>Ativo</th><th>Qtd</th><th>Preço${cri?' (US$)':''}</th><th>Dia</th><th>Valor (R$)</th><th>% na classe</th><th>Meta</th><th>Falta p/ meta</th><th>Preço médio (R$)</th><th>Proventos</th><th>Resultado c/ proventos</th>${cri?'':'<th>Teto</th><th>Upside</th>'}</tr>${tr}
+  <tr class="tot"><td>Total</td><td></td><td></td><td class="${sgn(tVar)}">${brl(tVar)}</td><td>${brl(tot)}</td><td>100%</td><td></td><td></td><td></td><td>${brl(tProv)}</td><td class="${sgn(tRes)}">${brl(tRes)}</td>${cri?'':'<td></td><td></td>'}</tr></table></div>`;
+}
+function rAtivos(T){document.getElementById('s-ativos').innerHTML=`
+  <h3>Ações</h3>${tabelaClasse(T,'acoes')}
+  <h3>FIIs</h3>${tabelaClasse(T,'fii')}
+  <h3>Cripto</h3>${tabelaClasse(T,'cripto')}
+  <div class="note">Preço médio e resultado contam a partir de ${dbr(S.config.inicio)} (saldo inicial ao preço daquele dia). Resultado = valor atual − custo + proventos recebidos + vendas realizadas. Teto usado: Jairo › Suno › Inter (o primeiro preenchido). Pesos e tetos são editados em Configurações.</div>`}
+
+function rRF(T){let tr='';S.rendaFixa.forEach(r=>{const v=valorRF(r);
+  tr+=`<tr data-id="${r.id}"><td><input class="w" data-f="nome" value="${esc(r.nome)}"></td>
+  <td><select data-f="grupo"><option value="rf"${r.grupo==='rf'?' selected':''}>Renda Fixa</option><option value="caixa"${r.grupo==='caixa'?' selected':''}>Caixa & Receb.</option></select></td>
+  <td><select data-f="indexador">${['CDI','IPCA','MANUAL','USD'].map(x=>`<option${r.indexador===x?' selected':''}>${x}</option>`).join('')}</select></td>
+  <td>${r.indexador==='CDI'||r.indexador==='IPCA'?`<input data-f="taxa" type="number" step="0.01" value="${r.taxa}">`:'—'}</td>
+  <td><input data-f="valorBase" type="number" step="0.01" value="${r.valorBase}"></td>
+  <td><input data-f="dataBase" type="date" value="${r.dataBase}" style="width:140px"></td>
+  <td><b>${brl(v)}</b></td><td class="l"><input class="w" data-f="obs" value="${esc(r.obs)}"></td>
+  <td><button class="small danger" data-del="${r.id}">✕</button></td></tr>`});
+  document.getElementById('s-rf').innerHTML=`<div class="card"><h2>Renda fixa &amp; Caixa</h2><div class="tbl" style="border:none"><table>
+  <tr><th>Nome</th><th class="l">Grupo</th><th class="l">Indexador</th><th>Taxa</th><th>Valor base</th><th class="l">Data base</th><th>Valor atual</th><th class="l">Obs.</th><th></th></tr>${tr}
+  <tr class="tot"><td>Total</td><td></td><td></td><td></td><td></td><td></td><td>${brl(T.cls.rf+T.cls.caixa)}</td><td></td><td></td></tr></table></div>
+  <div class="btns" style="margin-top:10px"><button id="addRF">+ Adicionar item</button></div>
+  <div class="note"><b>CDI</b>: taxa em % do CDI, corrige pelo CDI diário do Banco Central desde a data base. <b>IPCA</b>: taxa real (IPCA + x% a.a.), corrige pelo IPCA mensal do Banco Central + taxa pro rata — estimativa na curva, não é marcação a mercado. <b>MANUAL</b>: valor fixo que você atualiza. <b>USD</b>: valor base em dólares, convertido pelo dólar do dia.<br>Para atualizar um saldo pelo extrato, troque o valor base e coloque a data do extrato.</div></div>`;
+  const s=document.getElementById('s-rf');
+  s.querySelectorAll('tr[data-id] [data-f]').forEach(inp=>inp.onchange=async()=>{const r=S.rendaFixa.find(x=>x.id===inp.closest('tr').dataset.id);const f=inp.dataset.f;
+    r[f]=['taxa','valorBase'].includes(f)?+inp.value:inp.value;
+    if((f==='dataBase'||f==='indexador')&&r.dataBase<HOJE()){save();await atualizar();return}save();render()});
+  s.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{if(await confirmar('Remover este item?')){S.rendaFixa=S.rendaFixa.filter(x=>x.id!==b.dataset.del);save();render()}});
+  document.getElementById('addRF').onclick=()=>{S.rendaFixa.push({id:uid(),nome:'Novo item',grupo:'rf',indexador:'MANUAL',taxa:0,valorBase:0,dataBase:HOJE(),obs:''});save();render()};
+}
+
+function optsAtivos(sel){return S.ativos.map(a=>`<option value="${esc(a.ticker)}"${a.ticker===sel?' selected':''}>${esc(a.ticker)} — ${esc(a.nome)}</option>`).join('')}
+function rLanc(T){const L=[...S.lancamentos].sort((a,b)=>b.data.localeCompare(a.data));
+  const tr=L.map(l=>{const a=ativo(l.ticker);const cri=a&&a.classe==='cripto';return `<tr><td>${dbr(l.data)}</td><td class="l"><b>${esc(l.ticker)}</b></td><td class="l">${l.tipo==='C'?'Compra':'Venda'}${l.inicial?' <span class="tag">saldo inicial</span>':''}</td>
+  <td>${qtdf(l.qtd,cri?'cripto':'')}</td><td>${brlP(l.preco)}</td><td>${brl(+l.custos||0)}</td><td>${brl((l.preco||0)*l.qtd)}</td><td class="l muted">${esc(l.obs)}</td><td><button class="small danger" data-del="${l.id}">✕</button></td></tr>`}).join('');
+  document.getElementById('s-lanc').innerHTML=`<div class="card"><h2>Novo lançamento</h2><form class="row" id="fLanc">
+    <label>Data<input type="date" name="data" value="${HOJE()}" required></label>
+    <label>Ativo<select name="ticker">${optsAtivos()}</select></label>
+    <label>Tipo<select name="tipo"><option value="C">Compra</option><option value="V">Venda</option></select></label>
+    <label>Quantidade<input name="qtd" type="number" step="any" required style="width:120px"></label>
+    <label>Preço unitário (R$)<input name="preco" type="number" step="any" required style="width:130px"></label>
+    <label>Taxas (R$)<input name="custos" type="number" step="any" value="0" style="width:90px"></label>
+    <label>Obs.<input name="obs" style="width:160px"></label>
+    <button class="primary">Lançar</button></form>
+    <div class="note">Cripto: informe o preço unitário em reais (o que você pagou por 1 moeda, convertido). Ativo novo? Cadastre antes em Configurações.</div></div>
+  <div class="tbl" style="margin-top:12px"><table><tr><th>Data</th><th class="l">Ativo</th><th class="l">Tipo</th><th>Qtd</th><th>Preço</th><th>Taxas</th><th>Total</th><th class="l">Obs.</th><th></th></tr>${tr}</table></div>`;
+  document.getElementById('fLanc').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);
+    const l={id:uid(),data:f.get('data'),ticker:f.get('ticker'),tipo:f.get('tipo'),qtd:+f.get('qtd'),preco:+f.get('preco'),custos:+f.get('custos')||0,obs:f.get('obs')};
+    if(l.tipo==='V'){const p=T.P[l.ticker];if(p&&l.qtd>p.qtd+1e-9){toast('Quantidade maior que a posição');return}}
+    S.lancamentos.push(l);save();toast('Lançamento salvo');render()};
+  document.querySelectorAll('#s-lanc [data-del]').forEach(b=>b.onclick=async()=>{if(await confirmar('Excluir este lançamento?')){S.lancamentos=S.lancamentos.filter(x=>x.id!==b.dataset.del);save();render()}});
+}
+
+function rProv(T){const L=[...S.proventos].sort((a,b)=>b.data.localeCompare(a.data));
+  const porMes={};S.proventos.forEach(v=>{const m=v.data.slice(0,7);porMes[m]=(porMes[m]||0)+(+v.valor||0)});
+  const porAt={};S.proventos.forEach(v=>{porAt[v.ticker]=(porAt[v.ticker]||0)+(+v.valor||0)});
+  const meses=Object.keys(porMes).sort().reverse().slice(0,12);
+  document.getElementById('s-prov').innerHTML=`<div class="card"><h2>Registrar provento</h2><form class="row" id="fProv">
+    <label>Data<input type="date" name="data" value="${HOJE()}" required></label>
+    <label>Ativo<select name="ticker">${optsAtivos()}</select></label>
+    <label>Tipo<select name="tipo"><option>Dividendo</option><option>JCP</option><option>Rendimento FII</option><option>Outro</option></select></label>
+    <label>Valor líquido recebido (R$)<input name="valor" type="number" step="any" required style="width:150px"></label>
+    <button class="primary">Registrar</button></form>
+    <div class="note">O provento entra no resultado do ativo que pagou. Ele <b>não</b> soma no patrimônio: o dinheiro cai na sua conta e aparece quando você atualizar o saldo em Renda fixa &amp; Caixa (senão contaria duas vezes). Reinvestiu? Lance a compra normalmente no ativo que quiser.</div></div>
+  <div class="split" style="margin-top:12px">
+    <div class="card"><h2>Por mês</h2><table>${meses.map(m=>`<tr><td>${m.split('-').reverse().join('/')}</td><td>${brl(porMes[m])}</td></tr>`).join('')||'<tr><td class="muted">Nenhum provento ainda</td></tr>'}</table></div>
+    <div class="card"><h2>Por ativo (acumulado)</h2><table>${Object.entries(porAt).sort((a,b)=>b[1]-a[1]).map(([t,v])=>`<tr><td>${esc(t)}</td><td>${brl(v)}</td></tr>`).join('')||'<tr><td class="muted">—</td></tr>'}</table></div></div>
+  <div class="tbl" style="margin-top:12px"><table><tr><th>Data</th><th class="l">Ativo</th><th class="l">Tipo</th><th>Valor</th><th></th></tr>
+  ${L.map(v=>`<tr><td>${dbr(v.data)}</td><td class="l">${esc(v.ticker)}</td><td class="l">${esc(v.tipo)}</td><td>${brl(+v.valor)}</td><td><button class="small danger" data-del="${v.id}">✕</button></td></tr>`).join('')}</table></div>`;
+  document.getElementById('fProv').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);S.proventos.push({id:uid(),data:f.get('data'),ticker:f.get('ticker'),tipo:f.get('tipo'),valor:+f.get('valor')});save();toast('Provento registrado');render()};
+  document.querySelectorAll('#s-prov [data-del]').forEach(b=>b.onclick=async()=>{if(await confirmar('Excluir este provento?')){S.proventos=S.proventos.filter(x=>x.id!==b.dataset.del);save();render()}});
+}
+
+/* ---------- Aporte ---------- */
+let ultimoAporte=1000;
+function distribuir(valor,itens){ // itens: {k,atual,alvo} -> aloca só em quem está abaixo do alvo, proporcional ao gap
+  const gaps=itens.map(i=>Math.max(0,i.alvo-i.atual));const sg=gaps.reduce((a,b)=>a+b,0);
+  if(sg<=0)return itens.map(()=>0);
+  if(sg>=valor)return gaps.map(g=>valor*g/sg);
+  const resto=valor-sg;const sa=itens.reduce((s,i)=>s+i.peso,0)||1;return gaps.map((g,k)=>g+resto*itens[k].peso/sa);
+}
+function rAporte(T){const el=document.getElementById('s-aporte');const M=S.config.metas;const A=ultimoAporte;
+  const ks=Object.keys(GRUPOS);const novoTotal=T.total+A;
+  const dC=distribuir(A,ks.map(k=>({k,atual:T.grp[k],alvo:(M[k]||0)/100*novoTotal,peso:+M[k]||0})));
+  let html=`<div class="card"><h2>Calculadora de aporte</h2><form class="row" id="fAp"><label>Valor do aporte (R$)<input name="v" type="number" step="any" value="${A}" style="width:160px"></label><button class="primary">Calcular</button></form>
+  <div class="note">Só compra, nunca vende: o dinheiro vai para as classes abaixo da meta, proporcional ao quanto falta. Dentro da classe, mesma lógica pelos pesos. Ações/FIIs acima do preço-teto ficam de fora.</div></div>
+  <div class="card" style="margin-top:12px"><h2>1. Por classe</h2><table><tr><th>Classe</th><th>Atual</th><th>Meta após aporte</th><th>Aportar</th></tr>
+  ${ks.map((k,i)=>`<tr><td><span class="dot" style="background:${GRUPOS[k].c}"></span>${GRUPOS[k].n}</td><td>${brl(T.grp[k])}</td><td>${brl((M[k]||0)/100*novoTotal)}</td><td><b>${brl(dC[i])}</b></td></tr>`).join('')}</table></div>`;
+  const det=(cls,valor)=>{if(valor<0.01)return '';const ps=Object.values(T.P).filter(p=>p.a.classe===cls&&(+p.a.peso||0)>0&&p.preco);
+    const elig=ps.filter(p=>!p.acimaTeto);const fora=ps.filter(p=>p.acimaTeto);
+    const valCls=ps.reduce((s,p)=>s+(p.valor||0),0)+valor;const sp=elig.reduce((s,p)=>s+ +p.a.peso,0)||1;
+    const d=distribuir(valor,elig.map(p=>({atual:p.valor||0,alvo:(+p.a.peso)/sp*valCls,peso:+p.a.peso})));
+    let usado=0;const rows=elig.map((p,i)=>{if(d[i]<0.01)return '';const cri=cls==='cripto';const q=cri?d[i]/p.preco:Math.floor(d[i]/p.preco);const v=q*p.preco;usado+=v;
+      return `<tr><td><b>${esc(p.a.ticker)}</b></td><td>${brlP(p.preco)}</td><td>${brl(d[i])}</td><td><b>${cri?nf(q,8):q}</b></td><td>${brl(v)}</td></tr>`}).join('');
+    return `<div class="card" style="margin-top:12px"><h2>${CLASSES[cls].n} — ${brl(valor)}</h2><table><tr><th>Ativo</th><th>Preço</th><th>Valor ideal</th><th>Comprar (qtd)</th><th>Valor da compra</th></tr>${rows}
+    <tr class="tot"><td>Sobra (cotas inteiras)</td><td></td><td></td><td></td><td>${brl(valor-usado)}</td></tr></table>${fora.length?`<div class="note">Fora por estar acima do teto: ${fora.map(p=>esc(p.a.ticker)).join(', ')}</div>`:''}</div>`};
+  html+=det('acoes',dC[1])+det('fii',dC[2])+det('cripto',dC[3]);
+  if(dC[0]>=0.01)html+=`<div class="card" style="margin-top:12px"><h2>Renda Fixa + Caixa — ${brl(dC[0])}</h2><div class="note">Aplicar em renda fixa (ex.: CDB) e depois atualizar o saldo na aba Renda fixa &amp; Caixa.</div></div>`;
+  el.innerHTML=html;
+  document.getElementById('fAp').onsubmit=e=>{e.preventDefault();ultimoAporte=+new FormData(e.target).get('v')||0;render()};
+}
+
+/* ---------- Evolução ---------- */
+function rEvol(T){const H=S.historico;const el=document.getElementById('s-evol');
+  if(H.length<2){el.innerHTML=`<div class="card"><h2>Evolução do patrimônio</h2><p class="muted">O painel guarda uma foto do patrimônio a cada dia em que você abre. O gráfico aparece a partir do segundo dia. Registros até agora: ${H.length}.</p></div>`+tabHist(H);return}
+  const W=900,Hh=280,p={l:70,r:16,t:16,b:30};const xs=H.map(h=>new Date(h.data).getTime());const ys=H.map(h=>h.total);
+  const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys)*0.97,y1=Math.max(...ys)*1.02;
+  const X=x=>p.l+(x-x0)/(x1-x0||1)*(W-p.l-p.r),Y=y=>Hh-p.b-(y-y0)/(y1-y0||1)*(Hh-p.t-p.b);
+  const path=H.map((h,i)=>(i?'L':'M')+X(xs[i]).toFixed(1)+' '+Y(h.total).toFixed(1)).join(' ');
+  let g='';for(let i=0;i<=4;i++){const v=y0+(y1-y0)*i/4;g+=`<line x1="${p.l}" x2="${W-p.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/><text x="${p.l-8}" y="${Y(v)+4}" text-anchor="end">${(v/1000).toLocaleString('pt-BR',{maximumFractionDigits:0})} mil</text>`}
+  const lbl=[0,Math.floor(H.length/2),H.length-1].map(i=>`<text x="${X(xs[i])}" y="${Hh-8}" text-anchor="middle">${dbr(H[i].data)}</text>`).join('');
+  const last=H[H.length-1],first=H[0];
+  el.innerHTML=`<div class="card chart"><h2>Evolução do patrimônio <span class="muted" style="font-weight:400">· ${dbr(first.data)} → ${dbr(last.data)}: <span class="${sgn(last.total-first.total)}">${brl(last.total-first.total)} (${pct(last.total/first.total-1)})</span> (inclui aportes)</span></h2>
+  <svg viewBox="0 0 ${W} ${Hh}">${g}${lbl}<path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>${H.map((h,i)=>`<circle cx="${X(xs[i])}" cy="${Y(h.total)}" r="3" fill="var(--accent)"><title>${dbr(h.data)}: ${brl(h.total)}</title></circle>`).join('')}</svg></div>`+tabHist(H);
+}
+function tabHist(H){return `<div class="tbl" style="margin-top:12px"><table><tr><th>Data</th><th>Total</th><th>Renda Fixa</th><th>Caixa</th><th>Ações</th><th>FIIs</th><th>Cripto</th></tr>
+  ${[...H].reverse().map(h=>`<tr><td>${dbr(h.data)}</td><td><b>${brl(h.total)}</b></td><td>${brl(h.rf)}</td><td>${brl(h.caixa)}</td><td>${brl(h.acoes)}</td><td>${brl(h.fii)}</td><td>${brl(h.cripto)}</td></tr>`).join('')}</table></div>`}
+
+/* ---------- Configurações ---------- */
+function rCfg(T){const M=S.config.metas;const el=document.getElementById('s-cfg');
+  const linhas=S.ativos.map(a=>`<tr data-id="${a.id}"><td><b>${esc(a.ticker)}</b></td><td><input class="w" data-f="nome" value="${esc(a.nome)}"></td><td class="l">${CLASSES[a.classe].n}</td>
+    <td><input data-f="peso" type="number" step="any" value="${a.peso}" style="width:70px"></td>
+    ${a.classe==='cripto'?`<td colspan="3" class="l"><input class="w" data-f="cgId" value="${esc(a.cgId)}" title="ID CoinGecko" style="width:220px"></td>`:`<td><input data-f="tetoInter" type="number" step="any" value="${a.tetoInter||''}" style="width:75px"></td><td><input data-f="tetoSuno" type="number" step="any" value="${a.tetoSuno||''}" style="width:75px"></td><td><input data-f="tetoJairo" type="number" step="any" value="${a.tetoJairo||''}" style="width:75px"></td>`}
+    <td><input class="w" data-f="setor" value="${esc(a.setor)}"></td><td><button class="small danger" data-del="${a.id}">✕</button></td></tr>`).join('');
+  el.innerHTML=`<div class="split"><div class="card"><h2>Metas por classe (%)</h2><form class="row" id="fMeta">
+    ${Object.entries(GRUPOS).map(([k,g])=>`<label>${g.n}<input name="${k}" type="number" step="any" value="${M[k]}" style="width:90px"></label>`).join('')}
+    <label>Alerta de desvio (p.p.)<input name="alerta" type="number" step="any" value="${S.config.alerta}" style="width:90px"></label><button class="primary">Salvar</button></form>
+    <div class="note" id="somaMeta">Soma: ${Object.values(M).reduce((a,b)=>a+ +b,0)}%</div></div>
+    <div class="card"><h2>Conexão, cotações e backup</h2><div class="note" style="margin:0 0 8px">Dados em <b>github.com/${esc(GH?.owner)}/${esc(GH?.repo)}</b> (arquivo ${ARQ}). Cada alteração vira uma versão no histórico do repositório. <button class="small" id="bDesc">Desconectar este aparelho</button></div><form class="row" id="fTok"><label>Chave brapi.dev<input name="t" value="${esc(S.config.brapiToken)}" style="width:230px"></label><button>Salvar</button></form>
+    <div class="note">Último backup: ${S.config.ultimoBackup?dbr(S.config.ultimoBackup):'nunca'}. O Excel é uma cópia extra, independente do GitHub — salve no Drive de vez em quando.</div>
+    <div class="btns" style="margin-top:8px"><button onclick="exportar()">⬇ Exportar Excel</button><button onclick="document.getElementById('fImport').click()">⬆ Importar Excel</button><button class="danger" id="bReset">Restaurar dados iniciais</button></div></div></div>
+  <div class="card" style="margin-top:12px"><h2>Ativos cadastrados</h2><div class="tbl" style="border:none"><table><tr><th>Ticker</th><th class="l">Nome</th><th class="l">Classe</th><th>Peso / meta</th><th>Teto Inter</th><th>Teto Suno</th><th>Teto Jairo</th><th class="l">Setor</th><th></th></tr>${linhas}</table></div>
+  <div class="note">Peso: nas ações e FIIs é peso relativo (ex.: WEGE3 12 de 69); na cripto é a meta em % dentro da classe. Para cripto, o campo azul é o ID do CoinGecko (ex.: bitcoin).</div>
+  <h3>Adicionar ativo</h3><form class="row" id="fAt"><label>Ticker<input name="ticker" required style="width:100px"></label><label>Nome<input name="nome" style="width:170px"></label>
+  <label>Classe<select name="classe"><option value="acoes">Ações</option><option value="fii">FIIs</option><option value="cripto">Cripto</option></select></label>
+  <label>Peso / meta<input name="peso" type="number" step="any" value="0" style="width:80px"></label><label>ID CoinGecko (cripto)<input name="cgId" style="width:160px"></label><button class="primary">Adicionar</button></form></div>`;
+  document.getElementById('fMeta').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);Object.keys(GRUPOS).forEach(k=>M[k]=+f.get(k)||0);S.config.alerta=+f.get('alerta')||5;save();toast('Metas salvas');render()};
+  document.getElementById('fTok').onsubmit=e=>{e.preventDefault();S.config.brapiToken=new FormData(e.target).get('t').trim();save();atualizar()};
+  el.querySelectorAll('tr[data-id] [data-f]').forEach(inp=>inp.onchange=()=>{const a=S.ativos.find(x=>x.id===inp.closest('tr').dataset.id);const f=inp.dataset.f;a[f]=['peso','tetoInter','tetoSuno','tetoJairo'].includes(f)?(+inp.value||0):inp.value.trim();save();if(f==='cgId')atualizar();else toast('Salvo')});
+  el.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{const a=S.ativos.find(x=>x.id===b.dataset.del);if(T.P[a.ticker].qtd>0){toast('Ativo com posição — venda/zere antes');return}
+    if(await confirmar(`Remover ${a.ticker} do cadastro?`)){S.ativos=S.ativos.filter(x=>x!==a);save();render()}});
+  document.getElementById('fAt').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);const t=f.get('ticker').trim().toUpperCase();if(ativo(t)){toast('Ticker já cadastrado');return}
+    S.ativos.push({id:uid(),ticker:t,nome:f.get('nome')||t,classe:f.get('classe'),peso:+f.get('peso')||0,setor:'',tetoInter:0,tetoSuno:0,tetoJairo:0,cgId:f.get('cgId').trim()});save();atualizar()};
+  document.getElementById('bDesc').onclick=async()=>{if(await confirmar('Remover a chave de acesso deste aparelho? Os dados continuam no GitHub.')){LS(KEY+'_gh',null);location.reload()}};
+  document.getElementById('bReset').onclick=async()=>{if(await confirmar('Apagar tudo e voltar aos dados iniciais? Faça um backup antes.')){S=seed();save();atualizar()}};
+}
+
+/* ================= EXCEL ================= */
+const SHEETS={Ativos:['ticker','nome','classe','peso','setor','tetoInter','tetoSuno','tetoJairo','cgId'],
+  Lancamentos:['data','ticker','tipo','qtd','preco','custos','obs','inicial'],
+  Proventos:['data','ticker','tipo','valor'],
+  RendaFixa:['nome','grupo','indexador','taxa','valorBase','dataBase','obs'],
+  Historico:['data','total','rf','caixa','acoes','fii','cripto']};
+function exportar(){if(!window.XLSX){toast('Biblioteca do Excel não carregou (sem internet?)');return}
+  const wb=XLSX.utils.book_new();const T=totais();
+  // aba de posição (só leitura, para consulta)
+  const pos=Object.values(T.P).filter(p=>p.qtd>0).map(p=>({ticker:p.a.ticker,classe:CLASSES[p.a.classe].n,qtd:p.qtd,preco_brl:p.preco,valor_brl:p.valor,preco_medio:p.pm,proventos:p.prov,resultado:p.resultado}));
+  S.rendaFixa.forEach(r=>pos.push({ticker:r.nome,classe:CLASSES[r.grupo].n,qtd:'',preco_brl:'',valor_brl:valorRF(r)}));
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(pos),'Posicao_'+HOJE());
+  const pick=(arr,cols)=>arr.map(o=>Object.fromEntries(cols.map(c=>[c,o[c]??''])));
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(pick(S.ativos,SHEETS.Ativos),{header:SHEETS.Ativos}),'Ativos');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(pick(S.lancamentos.map(l=>({...l,inicial:l.inicial?'sim':''})),SHEETS.Lancamentos),{header:SHEETS.Lancamentos}),'Lancamentos');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(pick(S.proventos,SHEETS.Proventos),{header:SHEETS.Proventos}),'Proventos');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(pick(S.rendaFixa,SHEETS.RendaFixa),{header:SHEETS.RendaFixa}),'RendaFixa');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(pick(S.historico,SHEETS.Historico),{header:SHEETS.Historico}),'Historico');
+  const cfg=[...Object.entries(S.config.metas).map(([k,v])=>({chave:'meta_'+k,valor:v})),{chave:'alerta',valor:S.config.alerta},{chave:'brapiToken',valor:S.config.brapiToken},{chave:'inicio',valor:S.config.inicio}];
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(cfg),'Config');
+  XLSX.writeFile(wb,`Backup_Investimentos_${HOJE()}.xlsx`);
+  S.config.ultimoBackup=HOJE();save();renderBanner();toast('Backup exportado — salve no seu Drive');
+}
+async function importar(file){if(!window.XLSX){toast('Biblioteca do Excel não carregou');return}
+  try{const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});
+    for(const n of ['Ativos','Lancamentos','RendaFixa','Config'])if(!wb.Sheets[n])throw new Error('Aba "'+n+'" não encontrada');
+    const rd=n=>wb.Sheets[n]?XLSX.utils.sheet_to_json(wb.Sheets[n],{defval:'',raw:true}):[];
+    const num=v=>v===''||v==null?null:+v;const ds=v=>typeof v==='number'?new Date(Math.round((v-25569)*864e5)).toISOString().slice(0,10):String(v).slice(0,10);
+    const N={...S,config:{...S.config,metas:{...S.config.metas}}};
+    N.ativos=rd('Ativos').map(r=>({id:uid(),ticker:String(r.ticker).trim(),nome:r.nome,classe:r.classe,peso:+r.peso||0,setor:r.setor,tetoInter:+r.tetoInter||0,tetoSuno:+r.tetoSuno||0,tetoJairo:+r.tetoJairo||0,cgId:r.cgId}));
+    N.lancamentos=rd('Lancamentos').map(r=>({id:uid(),data:ds(r.data),ticker:String(r.ticker).trim(),tipo:r.tipo,qtd:+r.qtd,preco:num(r.preco),custos:+r.custos||0,obs:r.obs,inicial:r.inicial==='sim'}));
+    N.proventos=rd('Proventos').map(r=>({id:uid(),data:ds(r.data),ticker:String(r.ticker).trim(),tipo:r.tipo,valor:+r.valor}));
+    N.rendaFixa=rd('RendaFixa').map(r=>({id:uid(),nome:r.nome,grupo:r.grupo,indexador:r.indexador,taxa:+r.taxa||0,valorBase:+r.valorBase||0,dataBase:ds(r.dataBase),obs:r.obs}));
+    N.historico=rd('Historico').map(r=>({data:ds(r.data),total:+r.total,rf:+r.rf,caixa:+r.caixa,acoes:+r.acoes,fii:+r.fii,cripto:+r.cripto}));
+    rd('Config').forEach(r=>{const k=String(r.chave);if(k.startsWith('meta_'))N.config.metas[k.slice(5)]=+r.valor;else if(k==='alerta')N.config.alerta=+r.valor;else if(k==='brapiToken')N.config.brapiToken=String(r.valor);else if(k==='inicio')N.config.inicio=ds(r.valor)});
+    if(!await confirmar(`Substituir os dados atuais pelo backup? (${N.ativos.length} ativos, ${N.lancamentos.length} lançamentos, ${N.proventos.length} proventos)`))return;
+    S=N;S.cache={quotes:{},usd:null,cdi:[],ipca:[]};save();toast('Backup importado');atualizar();
+  }catch(e){toast('Erro ao importar: '+e.message)}
+}
+
+/* ================= INIT ================= */
+document.getElementById('tabs').onclick=e=>{const t=e.target.dataset.tab;if(!t)return;aba=t;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));document.querySelectorAll('section').forEach(s=>s.classList.toggle('on',s.id==='s-'+t));render()};
+document.getElementById('bRefresh').onclick=atualizar;
+document.getElementById('bExport').onclick=exportar;
+document.getElementById('bImport').onclick=()=>document.getElementById('fImport').click();
+document.getElementById('fImport').onchange=e=>{const f=e.target.files[0];if(f)importar(f);e.target.value=''};
+function telaConexao(msg){const w=document.querySelector('.wrap');
+  w.innerHTML=`<div class="card" style="max-width:520px;margin:40px auto"><h2>Conectar aos seus dados</h2>
+  <p class="muted" style="margin-top:0">Os dados ficam no seu repositório privado do GitHub. Faça isso uma vez em cada computador ou celular.</p>
+  ${msg?`<div class="banner">${esc(msg)}</div>`:''}
+  <form id="fCon" class="grid" style="gap:10px">
+  <label>Usuário GitHub<input name="owner" value="${esc(GH?.owner||'jairohhm-prog')}" required></label>
+  <label>Repositório de dados<input name="repo" value="${esc(GH?.repo||'painel-investimentos-dados')}" required></label>
+  <label>Chave de acesso (fine-grained token)<input name="token" type="password" value="" placeholder="github_pat_…" required autocomplete="off"></label>
+  <button class="primary">Conectar</button></form>
+  <p class="note">A chave fica guardada só neste navegador. Em computador compartilhado, use "Desconectar este aparelho" em Configurações ao terminar.</p></div>`;
+  document.getElementById('fCon').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);GH={owner:f.get('owner').trim(),repo:f.get('repo').trim(),token:f.get('token').trim()};LS(KEY+'_gh',GH);location.reload()}}
+async function iniciar(){
+  if(!GH||!GH.token){telaConexao();return}
+  setSave('Carregando dados do GitHub…');
+  let d;try{d=await ghLer()}catch(e){telaConexao(e.message);return}
+  const cache=LS(KEY+'_cache')||{quotes:{},usd:null,cdi:[],ipca:[]};
+  if(!d){S=seed();S.cache=cache;setSave('Arquivo de dados não existia — criado com os dados iniciais');await gravar()}
+  else{S={...d,cache};setSave('Dados carregados ✓','pos')}
+  render();atualizar();
+}
+iniciar();
+</script>
+</body>
+</html>
