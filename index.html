@@ -34,6 +34,8 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 button.small{padding:3px 8px;font-size:12px}
 button.danger{color:var(--neg)}
 button:disabled{opacity:.45;cursor:not-allowed}
+body.priv input[data-num]{filter:blur(6px)}body.priv input[data-num]:focus{filter:none}
+#bPriv.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 .cfgt th,.cfgt td{padding:6px 6px}.cfgt select,.cfgt input{padding:4px 6px}
 .banner{background:var(--warn-soft);border:1px solid var(--warn);color:var(--fg);padding:9px 12px;border-radius:8px;margin-bottom:12px;display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}
 nav.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:16px;overflow-x:auto}
@@ -90,6 +92,7 @@ h3{font-size:13px;margin:16px 0 8px;color:var(--muted);text-transform:uppercase;
     <div style="text-align:right">
       <div class="sub" id="hStatus">Carregando cotações…</div><div class="sub"><span id="hSave" class="muted"></span></div>
       <div class="btns" style="margin-top:6px;justify-content:flex-end">
+        <button id="bPriv" title="Esconder/mostrar valores (para usar em público)"></button>
         <button id="bRefresh" class="primary">↻ Atualizar cotações</button>
         <button id="bExport">⬇ Exportar Excel</button>
         <button id="bImport">⬆ Importar Excel</button>
@@ -199,12 +202,15 @@ async function recarregar(){conflito=false;try{const d=await ghLer();if(d){S={..
 
 /* ================= FORMATAÇÃO ================= */
 const nf=(v,d=2)=>v==null||isNaN(v)?'—':v.toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});
-const brl=v=>v==null||isNaN(v)?'—':v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+// Modo privado: esconde valores em R$ e quantidades (percentuais e cotações continuam visíveis). Lembrado por aparelho.
+let PRIV=false;try{PRIV=localStorage.getItem('painelInvest_v1_priv')==='1'}catch(e){}
+const OCULTO='R$ •••••';const mq=x=>PRIV?'•••':x;
+const brl=v=>v==null||isNaN(v)?'—':PRIV?OCULTO:v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
 const brlP=v=>v==null||isNaN(v)?'—':v.toLocaleString('pt-BR',{style:'currency',currency:'BRL',minimumFractionDigits:2,maximumFractionDigits:v<1?6:2});
 const usd=v=>v==null||isNaN(v)?'—':'US$ '+nf(v,v<1?6:2);
 const pct=(v,d=1)=>v==null||isNaN(v)||!isFinite(v)?'—':(v*100).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d})+'%';
 const sgn=v=>v>0?'pos':v<0?'neg':'';
-const qtdf=(v,cls)=>cls==='cripto'?nf(v,v<10?8:2):nf(v,0);
+const qtdf=(v,cls)=>PRIV?'•••':cls==='cripto'?nf(v,v<10?8:2):nf(v,0);
 const dbr=s=>s?s.split('-').reverse().join('/'):'';
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function toast(m){const t=document.createElement('div');t.className='toast';t.textContent=m;document.body.appendChild(t);setTimeout(()=>t.remove(),2600)}
@@ -366,7 +372,7 @@ function rGeral(T){const el=document.getElementById('s-geral');const M=S.config.
   el.innerHTML=`<div class="grid kpis">
     <div class="card kpi"><div class="l">Patrimônio</div><div class="v">${brl(T.total)}</div></div>
     <div class="card kpi"><div class="l">Variação do dia</div><div class="v ${sgn(T.varDia)}">${brl(T.varDia)}</div></div>
-    <div class="card kpi"><div class="l">Patrimônio em BTC</div><div class="v">${totBTC?nf(totBTC,4)+' ₿':'—'}</div></div>
+    <div class="card kpi"><div class="l">Patrimônio em BTC</div><div class="v">${totBTC?mq(nf(totBTC,4))+' ₿':'—'}</div></div>
     <div class="card kpi"><div class="l">Proventos 12 meses</div><div class="v">${brl(prov12)}</div><div class="sub">a receber: ${brl(aReceber)}</div></div>
   </div>
   <div class="card" style="margin-top:12px"><h2>Alocação por classe — atual × meta</h2><div class="tbl" style="border:none"><table>
@@ -402,7 +408,7 @@ function rAtivos(T){document.getElementById('s-ativos').innerHTML=`
 function cardTesouro(){const L=S.rendaFixa.filter(r=>r.indexador==='TESOURO');if(!L.length)return '';
   const rows=L.map(r=>{const q=S.cache.tesouro?.[r.titulo];const mer=q&&r.qtdTitulos?q.pu*r.qtdTitulos:null;const cur=curvaTesouro(r);const g=mer!=null?mer-r.valorBase:null;
     const txM=q?parseFloat(String(q.taxa).replace(/[^\d,.-]/g,'').replace(',','.')):null;const dif=txM!=null&&r.taxa?r.taxa-txM:null;
-    return `<tr><td><b>${esc(r.titulo||'—')}</b><div class="muted">${q?.venc?'vence '+dbr(q.venc):''}</div></td><td>${nf(r.qtdTitulos||0,2)}</td><td>${brl(r.valorBase)}<div class="muted">${dbr(r.dataBase)}</div></td>
+    return `<tr><td><b>${esc(r.titulo||'—')}</b><div class="muted">${q?.venc?'vence '+dbr(q.venc):''}</div></td><td>${mq(nf(r.qtdTitulos||0,2))}</td><td>${brl(r.valorBase)}<div class="muted">${dbr(r.dataBase)}</div></td>
     <td>IPCA + ${nf(r.taxa||0)}%</td><td>${q?esc(q.taxa):'—'}</td><td class="${sgn(dif)}">${dif!=null?(dif>0?'+':'')+nf(dif)+' p.p.':'—'}</td>
     <td>${q?brl(q.pu):'—'}</td><td><b>${brl(mer)}</b></td><td class="${sgn(g)}"><b>${brl(g)}</b> <span class="muted">${g!=null&&r.valorBase?pct(g/r.valorBase,2):''}</span></td>
     <td>${cur!=null?brl(cur):'—'}</td><td class="${sgn(mer!=null&&cur!=null?mer-cur:null)}">${mer!=null&&cur!=null?brl(mer-cur):'—'}</td></tr>`}).join('');
@@ -525,7 +531,7 @@ function rEvol(T){const H=S.historico;const el=document.getElementById('s-evol')
   const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys)*0.97,y1=Math.max(...ys)*1.02;
   const X=x=>p.l+(x-x0)/(x1-x0||1)*(W-p.l-p.r),Y=y=>Hh-p.b-(y-y0)/(y1-y0||1)*(Hh-p.t-p.b);
   const path=H.map((h,i)=>(i?'L':'M')+X(xs[i]).toFixed(1)+' '+Y(h.total).toFixed(1)).join(' ');
-  let g='';for(let i=0;i<=4;i++){const v=y0+(y1-y0)*i/4;g+=`<line x1="${p.l}" x2="${W-p.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/><text x="${p.l-8}" y="${Y(v)+4}" text-anchor="end">${(v/1000).toLocaleString('pt-BR',{maximumFractionDigits:0})} mil</text>`}
+  let g='';for(let i=0;i<=4;i++){const v=y0+(y1-y0)*i/4;g+=`<line x1="${p.l}" x2="${W-p.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/>${PRIV?'':`<text x="${p.l-8}" y="${Y(v)+4}" text-anchor="end">${(v/1000).toLocaleString('pt-BR',{maximumFractionDigits:0})} mil</text>`}`}
   const lbl=[0,Math.floor(H.length/2),H.length-1].map(i=>`<text x="${X(xs[i])}" y="${Hh-8}" text-anchor="middle">${dbr(H[i].data)}</text>`).join('');
   const last=H[H.length-1],first=H[0];
   el.innerHTML=`<div class="card chart"><h2>Evolução do patrimônio <span class="muted" style="font-weight:400">· ${dbr(first.data)} → ${dbr(last.data)}: <span class="${sgn(last.total-first.total)}">${brl(last.total-first.total)} (${pct(last.total/first.total-1)})</span> (inclui aportes)</span></h2>
@@ -659,6 +665,9 @@ async function importar(file){if(!window.XLSX){toast('Biblioteca do Excel não c
 /* ================= INIT ================= */
 document.getElementById('tabs').onclick=e=>{const t=e.target.dataset.tab;if(!t)return;aba=t;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));document.querySelectorAll('section').forEach(s=>s.classList.toggle('on',s.id==='s-'+t));render()};
 document.getElementById('bRefresh').onclick=atualizar;
+function aplicarPriv(){document.body.classList.toggle('priv',PRIV);const b=document.getElementById('bPriv');b.classList.toggle('on',PRIV);b.textContent=PRIV?'🙈 Valores ocultos':'👁 Ocultar valores'}
+document.getElementById('bPriv').onclick=()=>{PRIV=!PRIV;try{localStorage.setItem('painelInvest_v1_priv',PRIV?'1':'0')}catch(e){}aplicarPriv();if(S)render()};
+aplicarPriv();
 document.getElementById('bExport').onclick=exportar;
 document.getElementById('bImport').onclick=()=>document.getElementById('fImport').click();
 document.getElementById('fImport').onchange=e=>{const f=e.target.files[0];if(f)importar(f);e.target.value=''};
