@@ -354,7 +354,7 @@ function rAtivos(T){document.getElementById('s-ativos').innerHTML=`
   <h3>Ações</h3>${tabelaClasse(T,'acoes')}
   <h3>FIIs</h3>${tabelaClasse(T,'fii')}
   <h3>Cripto</h3>${tabelaClasse(T,'cripto')}
-  <div class="note">Preço médio e resultado contam a partir de ${dbr(S.config.inicio)} (saldo inicial ao preço daquele dia). Resultado = valor atual − custo + proventos recebidos + vendas realizadas. Teto usado: Jairo › Suno › Inter (o primeiro preenchido). Pesos e tetos são editados em Configurações.</div>`}
+  <div class="note">Preço médio vem dos lançamentos; o do saldo inicial é o da corretora (ou o preço de ${dbr(S.config.inicio)} quando não informado) e pode ser editado na aba Lançamentos. Resultado = valor atual − custo + proventos recebidos + vendas realizadas. Teto usado: Jairo › Suno › Inter (o primeiro preenchido). Pesos e tetos são editados em Configurações.</div>`}
 
 function cardTesouro(){const L=S.rendaFixa.filter(r=>r.indexador==='TESOURO');if(!L.length)return '';
   const rows=L.map(r=>{const q=S.cache.tesouro?.[r.titulo];const mer=q&&r.qtdTitulos?q.pu*r.qtdTitulos:null;const cur=curvaTesouro(r);const g=mer!=null?mer-r.valorBase:null;
@@ -393,8 +393,8 @@ function rRF(T){let tr='';S.rendaFixa.forEach(r=>{const v=valorRF(r);
 
 function optsAtivos(sel){return S.ativos.map(a=>`<option value="${esc(a.ticker)}"${a.ticker===sel?' selected':''}>${esc(a.ticker)} — ${esc(a.nome)}</option>`).join('')}
 function rLanc(T){const L=[...S.lancamentos].sort((a,b)=>b.data.localeCompare(a.data));
-  const tr=L.map(l=>{const a=ativo(l.ticker);const cri=a&&a.classe==='cripto';return `<tr><td>${dbr(l.data)}</td><td class="l"><b>${esc(l.ticker)}</b></td><td class="l">${l.tipo==='C'?'Compra':'Venda'}${l.inicial?' <span class="tag">saldo inicial</span>':''}</td>
-  <td>${qtdf(l.qtd,cri?'cripto':'')}</td><td>${brlP(l.preco)}</td><td>${brl(+l.custos||0)}</td><td>${brl((l.preco||0)*l.qtd)}</td><td class="l muted">${esc(l.obs)}</td><td><button class="small danger" data-del="${l.id}">✕</button></td></tr>`}).join('');
+  const tr=L.map(l=>{const a=ativo(l.ticker);const cri=a&&a.classe==='cripto';return `<tr data-id="${l.id}"><td><input data-f="data" type="date" value="${l.data}" style="width:140px"></td><td class="l"><b>${esc(l.ticker)}</b></td><td class="l">${l.tipo==='C'?'Compra':'Venda'}${l.inicial?' <span class="tag">saldo inicial</span>':''}</td>
+  <td><input data-f="qtd" type="number" step="any" value="${l.qtd}" style="width:${cri?130:90}px"></td><td><input data-f="preco" type="number" step="any" value="${l.preco??''}" style="width:110px"></td><td><input data-f="custos" type="number" step="any" value="${+l.custos||0}" style="width:80px"></td><td>${brl((l.preco||0)*l.qtd)}</td><td class="l"><input class="w" data-f="obs" value="${esc(l.obs)}"></td><td><button class="small danger" data-del="${l.id}">✕</button></td></tr>`}).join('');
   document.getElementById('s-lanc').innerHTML=`<div class="card"><h2>Novo lançamento</h2><form class="row" id="fLanc">
     <label>Data<input type="date" name="data" value="${HOJE()}" required></label>
     <label>Ativo<select name="ticker">${optsAtivos()}</select></label>
@@ -404,12 +404,14 @@ function rLanc(T){const L=[...S.lancamentos].sort((a,b)=>b.data.localeCompare(a.
     <label>Taxas (R$)<input name="custos" type="number" step="any" value="0" style="width:90px"></label>
     <label>Obs.<input name="obs" style="width:160px"></label>
     <button class="primary">Lançar</button></form>
-    <div class="note">Cripto: informe o preço unitário em reais (o que você pagou por 1 moeda, convertido). Ativo novo? Cadastre antes em Configurações.</div></div>
+    <div class="note">Para corrigir um lançamento (inclusive o <b>saldo inicial</b>, que é onde fica o preço médio trazido da corretora), edite direto na tabela abaixo — salva ao sair do campo.<br>Cripto: informe o preço unitário em reais (o que você pagou por 1 moeda, convertido). Ativo novo? Cadastre antes em Configurações.</div></div>
   <div class="tbl" style="margin-top:12px"><table><tr><th>Data</th><th class="l">Ativo</th><th class="l">Tipo</th><th>Qtd</th><th>Preço</th><th>Taxas</th><th>Total</th><th class="l">Obs.</th><th></th></tr>${tr}</table></div>`;
   document.getElementById('fLanc').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);
     const l={id:uid(),data:f.get('data'),ticker:f.get('ticker'),tipo:f.get('tipo'),qtd:+f.get('qtd'),preco:+f.get('preco'),custos:+f.get('custos')||0,obs:f.get('obs')};
     if(l.tipo==='V'){const p=T.P[l.ticker];if(p&&l.qtd>p.qtd+1e-9){toast('Quantidade maior que a posição');return}}
     S.lancamentos.push(l);save();toast('Lançamento salvo');render()};
+  document.querySelectorAll('#s-lanc tr[data-id] [data-f]').forEach(inp=>inp.onchange=()=>{const l=S.lancamentos.find(x=>x.id===inp.closest('tr').dataset.id);const f=inp.dataset.f;
+    l[f]=['qtd','preco','custos'].includes(f)?(inp.value===''?null:+inp.value):inp.value;if(f==='preco')l.precoAuto=false;save();toast('Lançamento atualizado');render()});
   document.querySelectorAll('#s-lanc [data-del]').forEach(b=>b.onclick=async()=>{if(await confirmar('Excluir este lançamento?')){S.lancamentos=S.lancamentos.filter(x=>x.id!==b.dataset.del);save();render()}});
 }
 
