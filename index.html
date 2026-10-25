@@ -33,6 +33,8 @@ button:hover{border-color:var(--accent)}
 button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 button.small{padding:3px 8px;font-size:12px}
 button.danger{color:var(--neg)}
+button:disabled{opacity:.45;cursor:not-allowed}
+.cfgt th,.cfgt td{padding:6px 6px}.cfgt select,.cfgt input{padding:4px 6px}
 .banner{background:var(--warn-soft);border:1px solid var(--warn);color:var(--fg);padding:9px 12px;border-radius:8px;margin-bottom:12px;display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}
 nav.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:16px;overflow-x:auto}
 nav.tabs button{border:none;background:none;border-bottom:2px solid transparent;border-radius:0;padding:9px 12px;color:var(--muted);white-space:nowrap}
@@ -259,7 +261,7 @@ function posicoes(){
   Object.values(P).forEach(p=>{p.preco=precoBRL(p.a);p.valor=p.preco==null?null:p.qtd*p.preco;p.pm=p.qtd>1e-12?p.custo/p.qtd:null;
     const q=S.cache.quotes[p.a.ticker];p.chg=q?q.chg:null;p.varDia=p.valor!=null&&p.chg!=null?p.valor-p.valor/(1+p.chg):0;
     p.resultado=p.valor!=null?p.valor-p.custo+p.prov+p.realizado:null;p.resPct=p.custo>0&&p.resultado!=null?p.resultado/p.custo:null;
-    const t=+p.a.tetoJairo||+p.a.tetoSuno||+p.a.tetoInter||0;p.teto=t||null;p.upside=t&&p.preco?t/p.preco-1:null;
+    const t=+p.a.teto||0;p.teto=t||null;p.upside=t&&p.preco?t/p.preco-1:null;
     p.acimaTeto=p.a.classe!=='cripto'&&t>0&&p.preco!=null&&p.preco>t;});
   return P;
 }
@@ -288,6 +290,26 @@ function autoProventos(){const ev=S.cache.provB3?.eventos||[];const d0=provDesde
     const q=qtdEm(e.ticker,e.dataCom);if(q<=0)return;const jcp=/JRS|JCP|JUROS/i.test(e.tipo);
     out.push({...e,pagamento:pg,qtd:q,jcp,tipoN:jcp?'JCP':/RENDIMENTO/i.test(e.tipo)?'Rendimento':e.tipo.charAt(0)+e.tipo.slice(1).toLowerCase(),liquido:q*e.valor*(jcp?0.85:1),recebido:!!pg&&pg<=HOJE()})});
   return out}
+/* ---------- Metas e preço-teto ---------- */
+const CONV_TXT=['Fora da meta','Muito baixa','Baixa','Média','Alta','Muito alta'];
+function migrar(D){D.config=D.config||{};D.config.tetoMax=D.config.tetoMax||{acoes:15,fii:30};D.config.dyAlvo=D.config.dyAlvo||{acoes:6,fii:9};
+  const q={};(D.lancamentos||[]).forEach(l=>q[l.ticker]=(q[l.ticker]||0)+(l.tipo==='C'?1:-1)*l.qtd);
+  (D.ativos||[]).forEach(a=>{if(a.classe!=='cripto'&&a.conviccao==null){const w=+a.peso||0;a.conviccao=!(q[a.ticker]>0)&&w<=1?0:w>=10?5:w>=7?4:w>=5?3:w>=2?2:w>0?1:0}
+    if(a.classe!=='cripto'&&a.teto==null){a.teto=+a.tetoJairo||+a.tetoSuno||+a.tetoInter||0;a.tetoOrigem=a.teto?'manual':'';a.tetoRevisao=null}
+    delete a.tetoJairo;delete a.tetoSuno;delete a.tetoInter;if(a.classe!=='cripto')delete a.peso});return D}
+// % alvo de cada ativo dentro da classe (0..1). Ações/FIIs: convicção com teto máximo por ativo; cripto: % digitado.
+function metaClasse(cls){const L=S.ativos.filter(a=>a.classe===cls);const m={};
+  if(cls==='cripto'){L.forEach(a=>m[a.ticker]=(+a.peso||0)/100);return m}
+  const cap=(+S.config.tetoMax?.[cls]||100)/100;let ativos=L.filter(a=>+a.conviccao>0);L.forEach(a=>m[a.ticker]=0);
+  if(!ativos.length)return m;if(ativos.length*cap<1-1e-9){const t=ativos.reduce((s,a)=>s+ +a.conviccao,0);ativos.forEach(a=>m[a.ticker]=a.conviccao/t);m._capInviavel=true;return m}
+  let livres=[...ativos],resto=1;for(let it=0;it<20;it++){const t=livres.reduce((s,a)=>s+ +a.conviccao,0);let estourou=false;
+    for(const a of livres){const v=resto*a.conviccao/t;if(v>cap+1e-12){m[a.ticker]=cap;estourou=true}}
+    if(!estourou){livres.forEach(a=>m[a.ticker]=resto*a.conviccao/t);break}
+    livres=livres.filter(a=>m[a.ticker]!==cap);resto=1-ativos.filter(a=>m[a.ticker]===cap).length*cap}
+  return m}
+function prov12m(t){const ev=S.cache.provB3?.eventos||[];const lim=new Date(Date.now()-365*864e5).toISOString().slice(0,10);return ev.filter(e=>e.ticker===t&&e.dataCom>=lim).reduce((s,e)=>s+e.valor,0)}
+function sugestaoTeto(a){if(a.classe==='cripto')return null;const d=prov12m(a.ticker);const alvo=(+S.config.dyAlvo?.[a.classe]||0)/100;return d>0&&alvo>0?d/alvo:null}
+function tetoVencido(a){return !a.tetoRevisao||diasEntre(a.tetoRevisao,HOJE())>180}
 function totais(){
   const P=posicoes();const cls={rf:0,caixa:0,acoes:0,fii:0,cripto:0};let varDia=0,falta=0;
   Object.values(P).forEach(p=>{if(p.valor!=null){cls[p.a.classe]+=p.valor;varDia+=p.varDia}else if(p.qtd>0)falta++});
@@ -346,10 +368,10 @@ function rGeral(T){const el=document.getElementById('s-geral');const M=S.config.
 }
 
 function tabelaClasse(T,cls){
-  const ps=Object.values(T.P).filter(p=>p.a.classe===cls&&(p.qtd>0||p.a.peso>0));
-  const tot=ps.reduce((s,p)=>s+(p.valor||0),0);const somaPeso=ps.reduce((s,p)=>s+(+p.a.peso||0),0);
+  const MC=metaClasse(cls);const ps=Object.values(T.P).filter(p=>p.a.classe===cls&&(p.qtd>0||MC[p.a.ticker]>0));
+  const tot=ps.reduce((s,p)=>s+(p.valor||0),0);
   const cri=cls==='cripto';let tr='';let tRes=0,tProv=0,tVar=0;
-  ps.sort((a,b)=>(b.valor||0)-(a.valor||0)).forEach(p=>{const at=tot?(p.valor||0)/tot:0;const mt=somaPeso?(+p.a.peso||0)/somaPeso:0;const q=S.cache.quotes[p.a.ticker];
+  ps.sort((a,b)=>(b.valor||0)-(a.valor||0)).forEach(p=>{const at=tot?(p.valor||0)/tot:0;const mt=MC[p.a.ticker]||0;const q=S.cache.quotes[p.a.ticker];
     tRes+=p.resultado||0;tProv+=p.prov;tVar+=p.varDia||0;
     tr+=`<tr><td><b>${esc(p.a.ticker)}</b> <span class="muted">${esc(p.a.nome)}</span>${p.acimaTeto?' <span class="tag neg">acima do teto</span>':''}</td>
     <td>${qtdf(p.qtd,cls)}</td><td>${cri?usd(q?.p):brlP(p.preco)}</td><td class="${sgn(p.chg)}">${pct(p.chg,2)}</td><td>${brl(p.valor)}</td>
@@ -363,7 +385,7 @@ function rAtivos(T){document.getElementById('s-ativos').innerHTML=`
   <h3>Ações</h3>${tabelaClasse(T,'acoes')}
   <h3>FIIs</h3>${tabelaClasse(T,'fii')}
   <h3>Cripto</h3>${tabelaClasse(T,'cripto')}
-  <div class="note">Preço médio vem dos lançamentos; o do saldo inicial é o da corretora (ou o preço de ${dbr(S.config.inicio)} quando não informado) e pode ser editado na aba Lançamentos. Resultado = valor atual − custo + proventos recebidos + vendas realizadas. Teto usado: Jairo › Suno › Inter (o primeiro preenchido). Pesos e tetos são editados em Configurações.</div>`}
+  <div class="note">Preço médio vem dos lançamentos; o do saldo inicial é o da corretora (ou o preço de ${dbr(S.config.inicio)} quando não informado) e pode ser editado na aba Lançamentos. Resultado = valor atual − custo + proventos recebidos + vendas realizadas. Metas (pela convicção) e preços-teto são editados em Configurações.</div>`}
 
 function cardTesouro(){const L=S.rendaFixa.filter(r=>r.indexador==='TESOURO');if(!L.length)return '';
   const rows=L.map(r=>{const q=S.cache.tesouro?.[r.titulo];const mer=q&&r.qtdTitulos?q.pu*r.qtdTitulos:null;const cur=curvaTesouro(r);const g=mer!=null?mer-r.valorBase:null;
@@ -467,13 +489,13 @@ function rAporte(T){const el=document.getElementById('s-aporte');const M=S.confi
   const ks=Object.keys(GRUPOS);const novoTotal=T.total+A;
   const dC=distribuir(A,ks.map(k=>({k,atual:T.grp[k],alvo:(M[k]||0)/100*novoTotal,peso:+M[k]||0})));
   let html=`<div class="card"><h2>Calculadora de aporte</h2><form class="row" id="fAp"><label>Valor do aporte (R$)<input name="v" type="number" step="any" value="${A}" style="width:160px"></label><button class="primary">Calcular</button></form>
-  <div class="note">Só compra, nunca vende: o dinheiro vai para as classes abaixo da meta, proporcional ao quanto falta. Dentro da classe, mesma lógica pelos pesos. Ações/FIIs acima do preço-teto ficam de fora.</div></div>
+  <div class="note">Só compra, nunca vende: o dinheiro vai para as classes abaixo da meta, proporcional ao quanto falta. Dentro da classe, mesma lógica pela meta de cada ativo (convicção). Ações/FIIs acima do preço-teto ficam de fora.</div></div>
   <div class="card" style="margin-top:12px"><h2>1. Por classe</h2><table><tr><th>Classe</th><th>Atual</th><th>Meta após aporte</th><th>Aportar</th></tr>
   ${ks.map((k,i)=>`<tr><td><span class="dot" style="background:${GRUPOS[k].c}"></span>${GRUPOS[k].n}</td><td>${brl(T.grp[k])}</td><td>${brl((M[k]||0)/100*novoTotal)}</td><td><b>${brl(dC[i])}</b></td></tr>`).join('')}</table></div>`;
-  const det=(cls,valor)=>{if(valor<0.01)return '';const ps=Object.values(T.P).filter(p=>p.a.classe===cls&&(+p.a.peso||0)>0&&p.preco);
+  const det=(cls,valor)=>{if(valor<0.01)return '';const MC=metaClasse(cls);const ps=Object.values(T.P).filter(p=>p.a.classe===cls&&MC[p.a.ticker]>0&&p.preco);
     const elig=ps.filter(p=>!p.acimaTeto);const fora=ps.filter(p=>p.acimaTeto);
-    const valCls=ps.reduce((s,p)=>s+(p.valor||0),0)+valor;const sp=elig.reduce((s,p)=>s+ +p.a.peso,0)||1;
-    const d=distribuir(valor,elig.map(p=>({atual:p.valor||0,alvo:(+p.a.peso)/sp*valCls,peso:+p.a.peso})));
+    const valCls=Object.values(T.P).filter(p=>p.a.classe===cls).reduce((s,p)=>s+(p.valor||0),0)+valor;
+    const d=distribuir(valor,elig.map(p=>({atual:p.valor||0,alvo:MC[p.a.ticker]*valCls,peso:MC[p.a.ticker]})));
     let usado=0;const rows=elig.map((p,i)=>{if(d[i]<0.01)return '';const cri=cls==='cripto';const q=cri?d[i]/p.preco:Math.floor(d[i]/p.preco);const v=q*p.preco;usado+=v;
       return `<tr><td><b>${esc(p.a.ticker)}</b></td><td>${brlP(p.preco)}</td><td>${brl(d[i])}</td><td><b>${cri?nf(q,8):q}</b></td><td>${brl(v)}</td></tr>`}).join('');
     return `<div class="card" style="margin-top:12px"><h2>${CLASSES[cls].n} — ${brl(valor)}</h2><table><tr><th>Ativo</th><th>Preço</th><th>Valor ideal</th><th>Comprar (qtd)</th><th>Valor da compra</th></tr>${rows}
@@ -501,39 +523,90 @@ function tabHist(H){return `<div class="tbl" style="margin-top:12px"><table><tr>
   ${[...H].reverse().map(h=>`<tr><td>${dbr(h.data)}</td><td><b>${brl(h.total)}</b></td><td>${brl(h.rf)}</td><td>${brl(h.caixa)}</td><td>${brl(h.acoes)}</td><td>${brl(h.fii)}</td><td>${brl(h.cripto)}</td></tr>`).join('')}</table></div>`}
 
 /* ---------- Configurações ---------- */
-function rCfg(T){const M=S.config.metas;const el=document.getElementById('s-cfg');
-  const linhas=S.ativos.map(a=>`<tr data-id="${a.id}"><td><b>${esc(a.ticker)}</b></td><td><input class="w" data-f="nome" value="${esc(a.nome)}"></td><td class="l">${CLASSES[a.classe].n}</td>
-    <td><input data-f="peso" type="number" step="any" value="${a.peso}" style="width:70px"></td>
-    ${a.classe==='cripto'?`<td colspan="3" class="l"><input class="w" data-f="cgId" value="${esc(a.cgId)}" title="ID CoinGecko" style="width:220px"></td>`:`<td><input data-f="tetoInter" type="number" step="any" value="${a.tetoInter||''}" style="width:75px"></td><td><input data-f="tetoSuno" type="number" step="any" value="${a.tetoSuno||''}" style="width:75px"></td><td><input data-f="tetoJairo" type="number" step="any" value="${a.tetoJairo||''}" style="width:75px"></td>`}
-    <td><input class="w" data-f="setor" value="${esc(a.setor)}"></td><td><button class="small danger" data-del="${a.id}">✕</button></td></tr>`).join('');
-  el.innerHTML=`<div class="split"><div class="card"><h2>Metas por classe (%)</h2><form class="row" id="fMeta">
-    ${Object.entries(GRUPOS).map(([k,g])=>`<label>${g.n}<input name="${k}" type="number" step="any" value="${M[k]}" style="width:90px"></label>`).join('')}
-    <label>Alerta de desvio (p.p.)<input name="alerta" type="number" step="any" value="${S.config.alerta}" style="width:90px"></label><button class="primary">Salvar</button></form>
-    <div class="note" id="somaMeta">Soma: ${Object.values(M).reduce((a,b)=>a+ +b,0)}%</div></div>
-    <div class="card"><h2>Conexão, cotações e backup</h2><div class="note" style="margin:0 0 8px">Dados em <b>github.com/${esc(GH?.owner)}/${esc(GH?.repo)}</b> (arquivo ${ARQ}). Cada alteração vira uma versão no histórico do repositório. <button class="small" id="bDesc">Desconectar este aparelho</button></div><form class="row" id="fTok"><label>Chave brapi.dev<input name="t" value="${esc(S.config.brapiToken)}" style="width:230px"></label><button>Salvar</button></form>
+let cfgAba='metas';
+function subnav(){return `<nav class="tabs" id="cfgTabs" style="margin-bottom:12px">${[['metas','Metas da carteira'],['acoes','Ações'],['fii','FIIs'],['cripto','Cripto'],['conexao','Conexão & backup']].map(([k,n])=>`<button data-c="${k}" class="${cfgAba===k?'on':''}">${n}</button>`).join('')}</nav>`}
+function selConv(a){return `<select data-f="conviccao" title="${CONV_TXT[+a.conviccao||0]}" style="width:108px;letter-spacing:1px">${CONV_TXT.map((t,i)=>`<option value="${i}"${+a.conviccao===i?' selected':''}>${i?'★'.repeat(i)+'☆'.repeat(5-i):'— fora'}</option>`).join('')}</select>`}
+function cfgMetas(T){const M=S.config.metas;const soma=Object.values(M).reduce((a,b)=>a+ +b,0);
+  return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0">Meta de cada classe</h2>
+    <span class="tag ${Math.abs(soma-100)<0.01?'pos':'neg'}" id="somaTag" style="font-size:13px;padding:3px 10px">Soma: ${nf(soma,1)}% ${Math.abs(soma-100)<0.01?'✓':'— precisa fechar 100%'}</span></div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));margin-top:12px">
+    ${Object.entries(GRUPOS).map(([k,g])=>{const a=T.total?T.grp[k]/T.total:0;return `<div class="card" style="background:var(--soft)">
+      <div style="display:flex;align-items:center;gap:8px"><span class="dot" style="background:${g.c}"></span><b>${g.n}</b></div>
+      <div style="display:flex;align-items:baseline;gap:6px;margin:10px 0 6px"><input data-meta="${k}" type="number" step="0.5" min="0" max="100" value="${M[k]}" style="width:90px;font-size:22px;font-weight:700"><span style="font-size:18px">%</span></div>
+      <div class="sub">Alvo: <b>${brl((M[k]||0)/100*T.total)}</b> · Atual: ${pct(a)} (${brl(T.grp[k])})</div>
+      <div style="margin-top:8px">${barra(a,(M[k]||0)/100,g.c)}</div></div>`}).join('')}</div>
+    <div class="btns" style="margin-top:12px"><button class="primary" id="bMetas"${Math.abs(soma-100)<0.01?'':' disabled'}>Salvar metas</button></div></div>
+  <div class="card" style="margin-top:12px"><h2>Regras</h2><form class="row" id="fRegras">
+    <label>Alerta de desvio da meta (p.p.)<input name="alerta" type="number" step="0.5" value="${S.config.alerta}" style="width:110px"></label>
+    <label>Máx. por ação (% da classe)<input name="capA" type="number" step="1" value="${S.config.tetoMax.acoes}" style="width:110px"></label>
+    <label>Máx. por FII (% da classe)<input name="capF" type="number" step="1" value="${S.config.tetoMax.fii}" style="width:110px"></label>
+    <label>DY-alvo ações (Bazin, %)<input name="dyA" type="number" step="0.5" value="${S.config.dyAlvo.acoes}" style="width:110px"></label>
+    <label>DY-alvo FIIs (%)<input name="dyF" type="number" step="0.5" value="${S.config.dyAlvo.fii}" style="width:110px"></label>
+    <button class="primary">Salvar regras</button></form>
+    <div class="note">O DY-alvo é usado para sugerir o preço-teto: teto = proventos por cota dos últimos 12 meses ÷ DY-alvo. O máximo por ativo limita a meta de cada um mesmo com convicção alta (o excedente é redistribuído).</div></div>`}
+function cfgClasse(T,cls){const MC=metaClasse(cls);const L=S.ativos.filter(a=>a.classe===cls);const tot=L.reduce((s,a)=>s+(T.P[a.ticker]?.valor||0),0);const fii=cls==='fii';
+  const rows=L.sort((a,b)=>(MC[b.ticker]||0)-(MC[a.ticker]||0)||a.ticker.localeCompare(b.ticker)).map(a=>{const p=T.P[a.ticker];const at=tot?(p.valor||0)/tot:0;const sug=sugestaoTeto(a);const d12=prov12m(a.ticker);
+    return `<tr data-id="${a.id}"><td><b>${esc(a.ticker)}</b><div class="muted" style="font-size:12px;max-width:130px;overflow:hidden;text-overflow:ellipsis">${esc(a.nome)}</div></td>
+    <td class="l">${fii?`<select data-f="setor">${['','Tijolo','Papel (recebíveis)','Híbrido','Fundo de fundos'].map(x=>`<option${a.setor===x?' selected':''}>${x}</option>`).join('')}</select>`:`<input class="w" data-f="setor" value="${esc(a.setor)}" list="setores" style="width:125px">`}</td>
+    <td class="l">${selConv(a)}</td><td><b>${pct(MC[a.ticker]||0)}</b></td><td>${pct(at)}</td><td class="${sgn((MC[a.ticker]||0)-at)}">${pct((MC[a.ticker]||0)-at)}</td>
+    <td>${brlP(p.preco)}</td>${fii?`<td>${d12&&p.preco?pct(d12/p.preco):'—'}</td>`:''}
+    <td><input data-f="teto" type="number" step="0.01" value="${a.teto||''}" style="width:85px"></td>
+    <td>${sug?`${brl(sug)} <button class="small" data-sug="${a.id}" title="Usar como teto">usar</button>`:'<span class="muted">—</span>'}</td>
+    <td class="${sgn(p.upside)}">${pct(p.upside)}</td>
+    <td>${a.tetoRevisao?dbr(a.tetoRevisao):'—'}${a.teto&&tetoVencido(a)?' <span class="tag warn">revisar</span>':''}${a.tetoOrigem&&a.tetoOrigem!=='manual'?`<div class="muted">${a.tetoOrigem==='bazin'?'Bazin':'DY'}</div>`:''}</td>
+    <td><button class="small danger" data-del="${a.id}">✕</button></td></tr>`}).join('');
+  // concentração por setor
+  const sec={};L.forEach(a=>{const k=a.setor||(fii?'Sem segmento':'Sem setor');sec[k]=sec[k]||{at:0,mt:0};sec[k].at+=tot?(T.P[a.ticker]?.valor||0)/tot:0;sec[k].mt+=MC[a.ticker]||0});
+  const secRows=Object.entries(sec).sort((a,b)=>b[1].at-a[1].at).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${pct(v.at)}</td><td>${pct(v.mt)}</td><td>${barra(v.at,v.mt,CLASSES[cls].c)}</td></tr>`).join('');
+  return `<div class="card"><h2>${CLASSES[cls].n} — metas e preço-teto</h2>${MC._capInviavel?`<div class="banner">Com ${L.filter(a=>a.conviccao>0).length} ativos, o máximo de ${S.config.tetoMax[cls]}% por ativo não fecha 100% — o limite foi ignorado. Ajuste em Metas da carteira → Regras.</div>`:''}
+  <div class="tbl cfgt" style="border:none"><table><tr><th>Ativo</th><th class="l">${fii?'Segmento':'Setor'}</th><th class="l">Convicção</th><th>Meta</th><th>Atual</th><th>Falta p/ meta</th><th>Preço</th>${fii?'<th>DY 12m</th>':''}<th>Preço-teto</th><th>Sugestão<div class="muted" style="font-weight:400">${fii?'DY':'Bazin'} ${nf(S.config.dyAlvo[cls],1)}%</div></th><th>Upside</th><th>Revisado</th><th></th></tr>${rows}</table></div>
+  <datalist id="setores">${[...new Set(S.ativos.filter(a=>a.classe==='acoes'&&a.setor).map(a=>a.setor))].map(x=>`<option value="${esc(x)}">`).join('')}</datalist>
+  <div class="note">A meta sai da convicção (★): mais estrelas, fatia maior; "Fora da meta" = não entra no aporte. Limite de ${S.config.tetoMax[cls]}% por ativo. A sugestão de teto usa os proventos dos últimos 12 meses informados pela B3 ÷ DY-alvo — boa para pagadoras de dividendos; para empresas de crescimento (ex.: WEG), prefira o seu teto manual. Mudou o teto? A data de revisão atualiza sozinha; acima de 6 meses aparece "revisar".</div></div>
+  <div class="split" style="margin-top:12px"><div class="card"><h2>Concentração por ${fii?'segmento':'setor'}</h2><table><tr><th>${fii?'Segmento':'Setor'}</th><th>Atual</th><th>Meta</th><th class="l">Atual × meta</th></tr>${secRows}</table></div>
+  <div class="card"><h2>Adicionar ${fii?'FII':'ação'}</h2><form class="row fAdd" data-cls="${cls}"><label>Ticker<input name="ticker" required style="width:100px" placeholder="${fii?'HGLG11':'PETR4'}"></label><label>Nome<input name="nome" style="width:160px"></label>
+  <label>Convicção<select name="conv">${CONV_TXT.map((t,i)=>`<option value="${i}"${i===3?' selected':''}>${t}</option>`).join('')}</select></label><button class="primary">Adicionar</button></form>
+  <div class="note">O ticker é conferido na brapi antes de salvar. Depois lance a compra na aba Lançamentos.</div></div></div>`}
+function cfgCripto(T){const L=S.ativos.filter(a=>a.classe==='cripto');const soma=L.reduce((s,a)=>s+(+a.peso||0),0);const tot=L.reduce((s,a)=>s+(T.P[a.ticker]?.valor||0),0);
+  return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h2 style="margin:0">Cripto — meta de cada moeda</h2><span class="tag ${Math.abs(soma-100)<0.01?'pos':'neg'}" style="font-size:13px;padding:3px 10px">Soma: ${nf(soma,1)}% ${Math.abs(soma-100)<0.01?'✓':'— precisa fechar 100%'}</span></div>
+  <div class="tbl" style="border:none;margin-top:10px"><table><tr><th>Moeda</th><th>Meta (%)</th><th>Atual</th><th>Falta p/ meta</th><th>Preço (US$)</th><th class="l">ID CoinGecko</th><th></th></tr>
+  ${L.map(a=>{const at=tot?(T.P[a.ticker]?.valor||0)/tot:0;return `<tr data-id="${a.id}"><td><b>${esc(a.ticker)}</b> <span class="muted">${esc(a.nome)}</span></td><td><input data-f="peso" type="number" step="0.5" value="${a.peso}" style="width:80px"></td><td>${pct(at)}</td><td class="${sgn(a.peso/100-at)}">${pct(a.peso/100-at)}</td><td>${usd(S.cache.quotes[a.ticker]?.p)}</td><td class="l"><input class="w" data-f="cgId" value="${esc(a.cgId)}" style="width:200px;font-size:12px"></td><td><button class="small danger" data-del="${a.id}">✕</button></td></tr>`}).join('')}</table></div>
+  <h3>Adicionar moeda</h3><form class="row fAdd" data-cls="cripto"><label>Ticker<input name="ticker" required style="width:90px" placeholder="LINK"></label><label>Nome<input name="nome" style="width:150px"></label><label>ID CoinGecko<input name="cgId" required style="width:180px" placeholder="chainlink"></label><label>Meta (%)<input name="peso" type="number" step="0.5" value="0" style="width:80px"></label><button class="primary">Adicionar</button></form>
+  <div class="note">O ID do CoinGecko é o final do endereço da moeda no site (coingecko.com/pt/moedas/<b>chainlink</b>). É conferido antes de salvar.</div></div>`}
+function cfgConexao(){return `<div class="card"><h2>Conexão, cotações e backup</h2><div class="note" style="margin:0 0 8px">Dados em <b>github.com/${esc(GH?.owner)}/${esc(GH?.repo)}</b> (arquivo ${ARQ}). Cada alteração vira uma versão no histórico do repositório. <button class="small" id="bDesc">Desconectar este aparelho</button></div><form class="row" id="fTok"><label>Chave brapi.dev<input name="t" value="${esc(S.config.brapiToken)}" style="width:230px"></label><button>Salvar</button></form>
     <div class="note">Último backup: ${S.config.ultimoBackup?dbr(S.config.ultimoBackup):'nunca'}. O Excel é uma cópia extra, independente do GitHub — salve no Drive de vez em quando.</div>
-    <div class="btns" style="margin-top:8px"><button onclick="exportar()">⬇ Exportar Excel</button><button onclick="document.getElementById('fImport').click()">⬆ Importar Excel</button><button class="danger" id="bReset">Restaurar dados iniciais</button></div></div></div>
-  <div class="card" style="margin-top:12px"><h2>Ativos cadastrados</h2><div class="tbl" style="border:none"><table><tr><th>Ticker</th><th class="l">Nome</th><th class="l">Classe</th><th>Peso / meta</th><th>Teto Inter</th><th>Teto Suno</th><th>Teto Jairo</th><th class="l">Setor</th><th></th></tr>${linhas}</table></div>
-  <div class="note">Peso: nas ações e FIIs é peso relativo (ex.: WEGE3 12 de 69); na cripto é a meta em % dentro da classe. Para cripto, o campo azul é o ID do CoinGecko (ex.: bitcoin).</div>
-  <h3>Adicionar ativo</h3><form class="row" id="fAt"><label>Ticker<input name="ticker" required style="width:100px"></label><label>Nome<input name="nome" style="width:170px"></label>
-  <label>Classe<select name="classe"><option value="acoes">Ações</option><option value="fii">FIIs</option><option value="cripto">Cripto</option></select></label>
-  <label>Peso / meta<input name="peso" type="number" step="any" value="0" style="width:80px"></label><label>ID CoinGecko (cripto)<input name="cgId" style="width:160px"></label><button class="primary">Adicionar</button></form></div>`;
-  document.getElementById('fMeta').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);Object.keys(GRUPOS).forEach(k=>M[k]=+f.get(k)||0);S.config.alerta=+f.get('alerta')||5;save();toast('Metas salvas');render()};
-  document.getElementById('fTok').onsubmit=e=>{e.preventDefault();S.config.brapiToken=new FormData(e.target).get('t').trim();save();atualizar()};
-  el.querySelectorAll('tr[data-id] [data-f]').forEach(inp=>inp.onchange=()=>{const a=S.ativos.find(x=>x.id===inp.closest('tr').dataset.id);const f=inp.dataset.f;a[f]=['peso','tetoInter','tetoSuno','tetoJairo'].includes(f)?(+inp.value||0):inp.value.trim();save();if(f==='cgId')atualizar();else toast('Salvo')});
+    <div class="btns" style="margin-top:8px"><button onclick="exportar()">⬇ Exportar Excel</button><button onclick="document.getElementById('fImport').click()">⬆ Importar Excel</button><button class="danger" id="bReset">Restaurar dados iniciais</button></div></div>`}
+function rCfg(T){const el=document.getElementById('s-cfg');
+  el.innerHTML=subnav()+({metas:()=>cfgMetas(T),acoes:()=>cfgClasse(T,'acoes'),fii:()=>cfgClasse(T,'fii'),cripto:()=>cfgCripto(T),conexao:cfgConexao})[cfgAba]();
+  el.querySelector('#cfgTabs').onclick=e=>{const c=e.target.dataset.c;if(c){cfgAba=c;render()}};
+  // metas
+  el.querySelectorAll('[data-meta]').forEach(inp=>inp.oninput=()=>{const soma=[...el.querySelectorAll('[data-meta]')].reduce((s,i)=>s+(+i.value||0),0);const ok=Math.abs(soma-100)<0.01;const t=el.querySelector('#somaTag');t.className='tag '+(ok?'pos':'neg');t.textContent=`Soma: ${nf(soma,1)}% ${ok?'✓':'— precisa fechar 100%'}`;el.querySelector('#bMetas').disabled=!ok});
+  el.querySelector('#bMetas')?.addEventListener('click',()=>{el.querySelectorAll('[data-meta]').forEach(i=>S.config.metas[i.dataset.meta]=+i.value||0);save();toast('Metas salvas');render()});
+  el.querySelector('#fRegras')?.addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.target);S.config.alerta=+f.get('alerta')||5;S.config.tetoMax={acoes:+f.get('capA')||100,fii:+f.get('capF')||100};S.config.dyAlvo={acoes:+f.get('dyA')||0,fii:+f.get('dyF')||0};save();toast('Regras salvas');render()});
+  // edição de ativos
+  el.querySelectorAll('tr[data-id] [data-f]').forEach(inp=>inp.onchange=()=>{const a=S.ativos.find(x=>x.id===inp.closest('tr').dataset.id);const f=inp.dataset.f;
+    if(f==='teto'){a.teto=+inp.value||0;a.tetoOrigem='manual';a.tetoRevisao=HOJE()}else if(f==='conviccao'||f==='peso')a[f]=+inp.value||0;else a[f]=inp.value.trim();
+    save();if(f==='cgId')atualizar();else{toast('Salvo');render()}});
+  el.querySelectorAll('[data-sug]').forEach(b=>b.onclick=()=>{const a=S.ativos.find(x=>x.id===b.dataset.sug);const v=sugestaoTeto(a);if(!v)return;a.teto=+v.toFixed(2);a.tetoOrigem=a.classe==='fii'?'dy':'bazin';a.tetoRevisao=HOJE();save();toast(`Teto de ${a.ticker}: ${brl(a.teto)}`);render()});
   el.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{const a=S.ativos.find(x=>x.id===b.dataset.del);if(T.P[a.ticker].qtd>0){toast('Ativo com posição — venda/zere antes');return}
     if(await confirmar(`Remover ${a.ticker} do cadastro?`)){S.ativos=S.ativos.filter(x=>x!==a);save();render()}});
-  document.getElementById('fAt').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);const t=f.get('ticker').trim().toUpperCase();if(ativo(t)){toast('Ticker já cadastrado');return}
-    S.ativos.push({id:uid(),ticker:t,nome:f.get('nome')||t,classe:f.get('classe'),peso:+f.get('peso')||0,setor:'',tetoInter:0,tetoSuno:0,tetoJairo:0,cgId:f.get('cgId').trim()});save();atualizar()};
-  document.getElementById('bDesc').onclick=async()=>{if(await confirmar('Remover a chave de acesso deste aparelho? Os dados continuam no GitHub.')){LS(KEY+'_gh',null);location.reload()}};
-  document.getElementById('bReset').onclick=async()=>{if(await confirmar('Apagar tudo e voltar aos dados iniciais? Faça um backup antes.')){S=seed();save();atualizar()}};
+  el.querySelectorAll('.fAdd').forEach(fm=>fm.onsubmit=async e=>{e.preventDefault();const cls=fm.dataset.cls;const f=new FormData(fm);const t=f.get('ticker').trim().toUpperCase();if(ativo(t)){toast('Ticker já cadastrado');return}
+    const btn=fm.querySelector('button');btn.disabled=true;btn.textContent='Conferindo…';
+    try{let nome=f.get('nome');
+      if(cls==='cripto'){const id=f.get('cgId').trim().toLowerCase();const j=await getJSON(`https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(id)}&vs_currencies=usd`);if(!j[id])throw new Error('ID CoinGecko não encontrado');
+        S.ativos.push({id:uid(),ticker:t,nome:nome||t,classe:'cripto',peso:+f.get('peso')||0,setor:'',cgId:id})}
+      else{const j=await getJSON(`https://brapi.dev/api/quote/${encodeURIComponent(t)}?token=${encodeURIComponent(S.config.brapiToken)}`);const r=j.results&&j.results[0];if(!r||r.regularMarketPrice==null)throw new Error('ticker não encontrado');
+        S.ativos.push({id:uid(),ticker:t,nome:nome||r.shortName||t,classe:cls,conviccao:+f.get('conv')||0,setor:'',teto:0,tetoOrigem:'',tetoRevisao:null,cgId:''})}
+      save();toast(t+' adicionado');atualizar()}catch(err){toast('Não adicionado: '+err.message.replace('HTTP 404','ticker não encontrado'));btn.disabled=false;btn.textContent='Adicionar'}});
+  el.querySelector('#fTok')?.addEventListener('submit',e=>{e.preventDefault();S.config.brapiToken=new FormData(e.target).get('t').trim();save();atualizar()});
+  el.querySelector('#bDesc')?.addEventListener('click',async()=>{if(await confirmar('Remover a chave de acesso deste aparelho? Os dados continuam no GitHub.')){LS(KEY+'_gh',null);location.reload()}});
+  el.querySelector('#bReset')?.addEventListener('click',async()=>{if(await confirmar('Apagar tudo e voltar aos dados iniciais? Faça um backup antes.')){S=migrar(seed());save();atualizar()}});
 }
 
 /* ================= EXCEL ================= */
-const SHEETS={Ativos:['ticker','nome','classe','peso','setor','tetoInter','tetoSuno','tetoJairo','cgId'],
+const SHEETS={Ativos:['ticker','nome','classe','conviccao','peso','setor','teto','tetoOrigem','tetoRevisao','cgId'],
   Lancamentos:['data','ticker','tipo','qtd','preco','custos','obs','inicial'],
   Proventos:['data','ticker','tipo','valor'],
-  RendaFixa:['nome','grupo','indexador','taxa','valorBase','dataBase','obs'],
+  RendaFixa:['nome','grupo','indexador','titulo','taxa','valorBase','dataBase','vencimento','qtdTitulos','obs'],
   Historico:['data','total','rf','caixa','acoes','fii','cripto']};
 function exportar(){if(!window.XLSX){toast('Biblioteca do Excel não carregou (sem internet?)');return}
   const wb=XLSX.utils.book_new();const T=totais();
@@ -547,7 +620,7 @@ function exportar(){if(!window.XLSX){toast('Biblioteca do Excel não carregou (s
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(pick(S.proventos,SHEETS.Proventos),{header:SHEETS.Proventos}),'Proventos');
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(pick(S.rendaFixa,SHEETS.RendaFixa),{header:SHEETS.RendaFixa}),'RendaFixa');
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(pick(S.historico,SHEETS.Historico),{header:SHEETS.Historico}),'Historico');
-  const cfg=[...Object.entries(S.config.metas).map(([k,v])=>({chave:'meta_'+k,valor:v})),{chave:'alerta',valor:S.config.alerta},{chave:'brapiToken',valor:S.config.brapiToken},{chave:'inicio',valor:S.config.inicio}];
+  const cfg=[...Object.entries(S.config.metas).map(([k,v])=>({chave:'meta_'+k,valor:v})),{chave:'alerta',valor:S.config.alerta},{chave:'brapiToken',valor:S.config.brapiToken},{chave:'inicio',valor:S.config.inicio},{chave:'tetoMax_acoes',valor:S.config.tetoMax?.acoes},{chave:'tetoMax_fii',valor:S.config.tetoMax?.fii},{chave:'dyAlvo_acoes',valor:S.config.dyAlvo?.acoes},{chave:'dyAlvo_fii',valor:S.config.dyAlvo?.fii}];
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(cfg),'Config');
   XLSX.writeFile(wb,`Backup_Investimentos_${HOJE()}.xlsx`);
   S.config.ultimoBackup=HOJE();save();renderBanner();toast('Backup exportado — salve no seu Drive');
@@ -558,12 +631,14 @@ async function importar(file){if(!window.XLSX){toast('Biblioteca do Excel não c
     const rd=n=>wb.Sheets[n]?XLSX.utils.sheet_to_json(wb.Sheets[n],{defval:'',raw:true}):[];
     const num=v=>v===''||v==null?null:+v;const ds=v=>typeof v==='number'?new Date(Math.round((v-25569)*864e5)).toISOString().slice(0,10):String(v).slice(0,10);
     const N={...S,config:{...S.config,metas:{...S.config.metas}}};
-    N.ativos=rd('Ativos').map(r=>({id:uid(),ticker:String(r.ticker).trim(),nome:r.nome,classe:r.classe,peso:+r.peso||0,setor:r.setor,tetoInter:+r.tetoInter||0,tetoSuno:+r.tetoSuno||0,tetoJairo:+r.tetoJairo||0,cgId:r.cgId}));
+    N.ativos=rd('Ativos').map(r=>{const a={id:uid(),ticker:String(r.ticker).trim(),nome:r.nome,classe:r.classe,setor:r.setor,cgId:r.cgId};
+      if(r.classe==='cripto')a.peso=+r.peso||0;else if(r.conviccao!==undefined&&r.conviccao!==''){a.conviccao=+r.conviccao||0;a.teto=+r.teto||0;a.tetoOrigem=r.tetoOrigem||'';a.tetoRevisao=r.tetoRevisao?ds(r.tetoRevisao):null}
+      else{a.peso=+r.peso||0;a.tetoInter=+r.tetoInter||0;a.tetoSuno=+r.tetoSuno||0;a.tetoJairo=+r.tetoJairo||0}return a});
     N.lancamentos=rd('Lancamentos').map(r=>({id:uid(),data:ds(r.data),ticker:String(r.ticker).trim(),tipo:r.tipo,qtd:+r.qtd,preco:num(r.preco),custos:+r.custos||0,obs:r.obs,inicial:r.inicial==='sim'}));
     N.proventos=rd('Proventos').map(r=>({id:uid(),data:ds(r.data),ticker:String(r.ticker).trim(),tipo:r.tipo,valor:+r.valor}));
-    N.rendaFixa=rd('RendaFixa').map(r=>({id:uid(),nome:r.nome,grupo:r.grupo,indexador:r.indexador,taxa:+r.taxa||0,valorBase:+r.valorBase||0,dataBase:ds(r.dataBase),obs:r.obs}));
+    N.rendaFixa=rd('RendaFixa').map(r=>({id:uid(),nome:r.nome,grupo:r.grupo,indexador:r.indexador,titulo:r.titulo||'',taxa:+r.taxa||0,valorBase:+r.valorBase||0,dataBase:r.dataBase?ds(r.dataBase):'',vencimento:r.vencimento?ds(r.vencimento):'',qtdTitulos:r.qtdTitulos===''?null:+r.qtdTitulos,obs:r.obs}));
     N.historico=rd('Historico').map(r=>({data:ds(r.data),total:+r.total,rf:+r.rf,caixa:+r.caixa,acoes:+r.acoes,fii:+r.fii,cripto:+r.cripto}));
-    rd('Config').forEach(r=>{const k=String(r.chave);if(k.startsWith('meta_'))N.config.metas[k.slice(5)]=+r.valor;else if(k==='alerta')N.config.alerta=+r.valor;else if(k==='brapiToken')N.config.brapiToken=String(r.valor);else if(k==='inicio')N.config.inicio=ds(r.valor)});
+    rd('Config').forEach(r=>{const k=String(r.chave);if(k.startsWith('meta_'))N.config.metas[k.slice(5)]=+r.valor;else if(k==='alerta')N.config.alerta=+r.valor;else if(k==='brapiToken')N.config.brapiToken=String(r.valor);else if(k==='inicio')N.config.inicio=ds(r.valor);else if(/^(tetoMax|dyAlvo)_/.test(k)){const [g,c]=k.split('_');N.config[g]=N.config[g]||{};N.config[g][c]=+r.valor}});migrar(N);
     if(!await confirmar(`Substituir os dados atuais pelo backup? (${N.ativos.length} ativos, ${N.lancamentos.length} lançamentos, ${N.proventos.length} proventos)`))return;
     S=N;S.cache={quotes:{},usd:null,cdi:[],ipca:[]};save();toast('Backup importado');atualizar();
   }catch(e){toast('Erro ao importar: '+e.message)}
@@ -591,8 +666,8 @@ async function iniciar(){
   setSave('Carregando dados do GitHub…');
   let d;try{d=await ghLer()}catch(e){telaConexao(e.message);return}
   const cache=LS(KEY+'_cache')||{quotes:{},usd:null,cdi:[],ipca:[]};
-  if(!d){S=seed();S.cache=cache;setSave('Arquivo de dados não existia — criado com os dados iniciais');await gravar()}
-  else{S={...d,cache};setSave('Dados carregados ✓','pos')}
+  if(!d){S=migrar(seed());S.cache=cache;setSave('Arquivo de dados não existia — criado com os dados iniciais');await gravar()}
+  else{S=migrar({...d,cache});setSave('Dados carregados ✓','pos')}
   try{const r=await fetch(ghURL().replace(ARQ,'proventos_b3.json'),{headers:ghHdr(),cache:'no-store'});if(r.ok){S.cache.provB3=JSON.parse(b64dec((await r.json()).content));LS(KEY+'_cache',S.cache)}}catch(e){}
   render();atualizar();
 }
