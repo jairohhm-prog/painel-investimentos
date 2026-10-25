@@ -255,6 +255,7 @@ function posicoes(){
     else{const pm=p.qtd?p.custo/p.qtd:0;p.realizado+=l.qtd*(pr-pm)-(+l.custos||0);p.custo-=pm*l.qtd;p.qtd-=l.qtd}
   });
   S.proventos.forEach(v=>{if(P[v.ticker])P[v.ticker].prov+=+v.valor||0});
+  autoProventos().forEach(x=>{const p=P[x.ticker];if(!p)return;if(x.recebido)p.prov+=x.liquido;else p.provAR=(p.provAR||0)+x.liquido});
   Object.values(P).forEach(p=>{p.preco=precoBRL(p.a);p.valor=p.preco==null?null:p.qtd*p.preco;p.pm=p.qtd>1e-12?p.custo/p.qtd:null;
     const q=S.cache.quotes[p.a.ticker];p.chg=q?q.chg:null;p.varDia=p.valor!=null&&p.chg!=null?p.valor-p.valor/(1+p.chg):0;
     p.resultado=p.valor!=null?p.valor-p.custo+p.prov+p.realizado:null;p.resPct=p.custo>0&&p.resultado!=null?p.resultado/p.custo:null;
@@ -280,6 +281,13 @@ function fatorIPCA(ini,fim){const ser=(Array.isArray(S.cache.ipca)?S.cache.ipca:
     const prox=new Date(y,mo+1,1,12);const ate=prox<F?prox:F;const frac=Math.round((ate-d)/864e5)/diasMes;const v=ym in mp?mp[ym]:ult;f*=Math.pow(1+v,frac);d=ate}
   return f}
 function curvaTesouro(r){if(!/IPCA/.test(r.titulo||'')||!r.taxa||!r.dataBase)return null;return r.valorBase*fatorIPCA(r.dataBase,HOJE())*Math.pow(1+r.taxa/100,Math.max(0,diasEntre(r.dataBase,HOJE()))/365)}
+function provDesde(){return S.config.provAutoDesde||S.config.inicio||HOJE()}
+function qtdEm(t,data){return S.lancamentos.filter(l=>l.ticker===t&&(l.inicial||l.data<=data)).reduce((q,l)=>q+(l.tipo==='C'?1:-1)*l.qtd,0)}
+function autoProventos(){const ev=S.cache.provB3?.eventos||[];const d0=provDesde();const out=[];
+  ev.forEach(e=>{if(!ativo(e.ticker))return;const pg=e.pagamento&&e.pagamento<'2100'?e.pagamento:null;if(pg&&pg<d0)return;
+    const q=qtdEm(e.ticker,e.dataCom);if(q<=0)return;const jcp=/JRS|JCP|JUROS/i.test(e.tipo);
+    out.push({...e,pagamento:pg,qtd:q,jcp,tipoN:jcp?'JCP':/RENDIMENTO/i.test(e.tipo)?'Rendimento':e.tipo.charAt(0)+e.tipo.slice(1).toLowerCase(),liquido:q*e.valor*(jcp?0.85:1),recebido:!!pg&&pg<=HOJE()})});
+  return out}
 function totais(){
   const P=posicoes();const cls={rf:0,caixa:0,acoes:0,fii:0,cripto:0};let varDia=0,falta=0;
   Object.values(P).forEach(p=>{if(p.valor!=null){cls[p.a.classe]+=p.valor;varDia+=p.varDia}else if(p.qtd>0)falta++});
@@ -319,12 +327,13 @@ function rGeral(T){const el=document.getElementById('s-geral');const M=S.config.
   const Ps=Object.values(T.P).filter(p=>p.qtd>0&&p.chg!=null).sort((a,b)=>b.chg-a.chg);
   const mv=arr=>arr.map(p=>`<tr><td>${p.a.ticker}</td><td class="${sgn(p.chg)}">${pct(p.chg,2)}</td><td class="${sgn(p.varDia)}">${brl(p.varDia)}</td></tr>`).join('');
   const btc=T.P.BTC;const totBTC=btc&&btc.preco?T.total/btc.preco:null;
-  const prov12=S.proventos.filter(v=>diasEntre(v.data,HOJE())<=365).reduce((s,v)=>s+(+v.valor||0),0);
+  const AP=autoProventos();const aReceber=AP.filter(x=>!x.recebido).reduce((s,x)=>s+x.liquido,0);
+  const prov12=AP.filter(x=>x.recebido&&diasEntre(x.pagamento,HOJE())<=365).reduce((s,x)=>s+x.liquido,0)+S.proventos.filter(v=>diasEntre(v.data,HOJE())<=365).reduce((s,v)=>s+(+v.valor||0),0);
   el.innerHTML=`<div class="grid kpis">
     <div class="card kpi"><div class="l">Patrimônio</div><div class="v">${brl(T.total)}</div></div>
     <div class="card kpi"><div class="l">Variação do dia</div><div class="v ${sgn(T.varDia)}">${brl(T.varDia)}</div></div>
     <div class="card kpi"><div class="l">Patrimônio em BTC</div><div class="v">${totBTC?nf(totBTC,4)+' ₿':'—'}</div></div>
-    <div class="card kpi"><div class="l">Proventos 12 meses</div><div class="v">${brl(prov12)}</div></div>
+    <div class="card kpi"><div class="l">Proventos 12 meses</div><div class="v">${brl(prov12)}</div><div class="sub">a receber: ${brl(aReceber)}</div></div>
   </div>
   <div class="card" style="margin-top:12px"><h2>Alocação por classe — atual × meta</h2><div class="tbl" style="border:none"><table>
     <tr><th>Classe</th><th>Valor</th><th>Atual</th><th>Meta</th><th>Desvio</th><th class="l">Atual (barra) × meta (traço)</th><th class="l">Status</th></tr>${rows}
@@ -345,7 +354,7 @@ function tabelaClasse(T,cls){
     tr+=`<tr><td><b>${esc(p.a.ticker)}</b> <span class="muted">${esc(p.a.nome)}</span>${p.acimaTeto?' <span class="tag neg">acima do teto</span>':''}</td>
     <td>${qtdf(p.qtd,cls)}</td><td>${cri?usd(q?.p):brlP(p.preco)}</td><td class="${sgn(p.chg)}">${pct(p.chg,2)}</td><td>${brl(p.valor)}</td>
     <td>${pct(at)}</td><td>${pct(mt)}</td><td class="${sgn(mt-at)}">${pct(mt-at)}</td><td>${p.pm!=null?brlP(p.pm):'—'}</td>
-    <td>${p.prov?brl(p.prov):'—'}</td><td class="${sgn(p.resultado)}">${brl(p.resultado)} <span class="muted">${pct(p.resPct)}</span></td>
+    <td>${p.prov?brl(p.prov):'—'}${p.provAR?`<div class="muted">+${brl(p.provAR)} a receber</div>`:''}</td><td class="${sgn(p.resultado)}">${brl(p.resultado)} <span class="muted">${pct(p.resPct)}</span></td>
     ${cri?'':`<td>${p.teto?brl(p.teto):'—'}</td><td class="${sgn(p.upside)}">${pct(p.upside)}</td>`}</tr>`});
   return `<div class="tbl"><table><tr><th>Ativo</th><th>Qtd</th><th>Preço${cri?' (US$)':''}</th><th>Dia</th><th>Valor (R$)</th><th>% na classe</th><th>Meta</th><th>Falta p/ meta</th><th>Preço médio (R$)</th><th>Proventos</th><th>Resultado c/ proventos</th>${cri?'':'<th>Teto</th><th>Upside</th>'}</tr>${tr}
   <tr class="tot"><td>Total</td><td></td><td></td><td class="${sgn(tVar)}">${brl(tVar)}</td><td>${brl(tot)}</td><td>100%</td><td></td><td></td><td></td><td>${brl(tProv)}</td><td class="${sgn(tRes)}">${brl(tRes)}</td>${cri?'':'<td></td><td></td>'}</tr></table></div>`;
@@ -415,22 +424,33 @@ function rLanc(T){const L=[...S.lancamentos].sort((a,b)=>b.data.localeCompare(a.
   document.querySelectorAll('#s-lanc [data-del]').forEach(b=>b.onclick=async()=>{if(await confirmar('Excluir este lançamento?')){S.lancamentos=S.lancamentos.filter(x=>x.id!==b.dataset.del);save();render()}});
 }
 
-function rProv(T){const L=[...S.proventos].sort((a,b)=>b.data.localeCompare(a.data));
-  const porMes={};S.proventos.forEach(v=>{const m=v.data.slice(0,7);porMes[m]=(porMes[m]||0)+(+v.valor||0)});
-  const porAt={};S.proventos.forEach(v=>{porAt[v.ticker]=(porAt[v.ticker]||0)+(+v.valor||0)});
-  const meses=Object.keys(porMes).sort().reverse().slice(0,12);
-  document.getElementById('s-prov').innerHTML=`<div class="card"><h2>Registrar provento</h2><form class="row" id="fProv">
+function rProv(T){const A=autoProventos();const rec=A.filter(x=>x.recebido),arec=A.filter(x=>!x.recebido);
+  const todos=[...S.proventos.map(v=>({data:v.data,ticker:v.ticker,valor:+v.valor||0})),...rec.map(x=>({data:x.pagamento,ticker:x.ticker,valor:x.liquido}))];
+  const porMes={};todos.forEach(v=>{const m=v.data.slice(0,7);porMes[m]=(porMes[m]||0)+v.valor});
+  const porAt={};todos.forEach(v=>{porAt[v.ticker]=(porAt[v.ticker]||0)+v.valor});
+  const meses=Object.keys(porMes).sort().reverse().slice(0,12);const L=[...S.proventos].sort((a,b)=>b.data.localeCompare(a.data));
+  const totAR=arec.reduce((s,x)=>s+x.liquido,0);const b3=S.cache.provB3;
+  const linha=x=>`<tr><td>${x.pagamento?dbr(x.pagamento):'<span class="tag">a definir</span>'}</td><td class="l"><b>${esc(x.ticker)}</b></td><td class="l">${esc(x.tipoN)}</td><td>${dbr(x.dataCom)}</td><td>${qtdf(x.qtd,'')}</td><td>${brlP(x.valor)}</td><td><b>${brl(x.liquido)}</b>${x.jcp?' <span class="muted">(−15% IR)</span>':''}</td><td class="l muted">${esc(x.referente)}</td></tr>`;
+  const cab='<tr><th>Pagamento</th><th class="l">Ativo</th><th class="l">Tipo</th><th>Data-com</th><th>Cotas</th><th>Valor/cota</th><th>Líquido</th><th class="l">Referente</th></tr>';
+  document.getElementById('s-prov').innerHTML=`<div class="grid kpis">
+    <div class="card kpi"><div class="l">A receber</div><div class="v">${brl(totAR)}</div></div>
+    <div class="card kpi"><div class="l">Recebido (automático)</div><div class="v">${brl(rec.reduce((s,x)=>s+x.liquido,0))}</div></div>
+    <div class="card kpi"><div class="l">Lançado manualmente</div><div class="v">${brl(S.proventos.reduce((s,v)=>s+(+v.valor||0),0))}</div></div></div>
+  <div class="card" style="margin-top:12px"><h2>A receber</h2><div class="tbl" style="border:none"><table>${cab}${arec.sort((a,b)=>(a.pagamento||'9').localeCompare(b.pagamento||'9')).map(linha).join('')||'<tr><td class="muted" colspan="8">Nada a receber no momento</td></tr>'}</table></div></div>
+  <div class="card" style="margin-top:12px"><h2>Recebidos (automático)</h2><div class="tbl" style="border:none"><table>${cab}${rec.sort((a,b)=>b.pagamento.localeCompare(a.pagamento)).map(linha).join('')||'<tr><td class="muted" colspan="8">Nenhum ainda — os pagamentos aparecem aqui a partir da data de pagamento</td></tr>'}</table></div>
+  <div class="note">Automático pela B3 para ações e FIIs, a partir de ${dbr(provDesde())} (pagamentos desta data em diante). Cotas = sua posição na data-com. JCP já com 15% de IR descontado; dividendos e rendimentos de FII são isentos. ${b3?`Dados da B3 atualizados em ${new Date(b3.atualizadoEm).toLocaleString('pt-BR')} (robô diário no seu GitHub).`:'<span class="warn">Arquivo de proventos da B3 ainda não disponível.</span>'}${b3?.bonificacoes?.length?`<br><b class="warn">Bonificação/evento:</b> ${b3.bonificacoes.filter(x=>x.dataCom>=provDesde()).map(x=>`${esc(x.ticker)} ${esc(x.tipo)} fator ${nf(x.fator,4)} (data-com ${dbr(x.dataCom)})`).join('; ')||'nenhum'} — lance a compra das ações recebidas com o custo atribuído.`:''}</div></div>
+  <div class="split" style="margin-top:12px">
+    <div class="card"><h2>Recebido por mês</h2><table>${meses.map(m=>`<tr><td>${m.split('-').reverse().join('/')}</td><td>${brl(porMes[m])}</td></tr>`).join('')||'<tr><td class="muted">Nenhum provento ainda</td></tr>'}</table></div>
+    <div class="card"><h2>Recebido por ativo</h2><table>${Object.entries(porAt).sort((a,b)=>b[1]-a[1]).map(([t,v])=>`<tr><td>${esc(t)}</td><td>${brl(v)}</td></tr>`).join('')||'<tr><td class="muted">—</td></tr>'}</table></div></div>
+  <div class="card" style="margin-top:12px"><h2>Lançamento manual</h2><form class="row" id="fProv">
     <label>Data<input type="date" name="data" value="${HOJE()}" required></label>
     <label>Ativo<select name="ticker">${optsAtivos()}</select></label>
     <label>Tipo<select name="tipo"><option>Dividendo</option><option>JCP</option><option>Rendimento FII</option><option>Outro</option></select></label>
     <label>Valor líquido recebido (R$)<input name="valor" type="number" step="any" required style="width:150px"></label>
     <button class="primary">Registrar</button></form>
-    <div class="note">O provento entra no resultado do ativo que pagou. Ele <b>não</b> soma no patrimônio: o dinheiro cai na sua conta e aparece quando você atualizar o saldo em Renda fixa &amp; Caixa (senão contaria duas vezes). Reinvestiu? Lance a compra normalmente no ativo que quiser.</div></div>
-  <div class="split" style="margin-top:12px">
-    <div class="card"><h2>Por mês</h2><table>${meses.map(m=>`<tr><td>${m.split('-').reverse().join('/')}</td><td>${brl(porMes[m])}</td></tr>`).join('')||'<tr><td class="muted">Nenhum provento ainda</td></tr>'}</table></div>
-    <div class="card"><h2>Por ativo (acumulado)</h2><table>${Object.entries(porAt).sort((a,b)=>b[1]-a[1]).map(([t,v])=>`<tr><td>${esc(t)}</td><td>${brl(v)}</td></tr>`).join('')||'<tr><td class="muted">—</td></tr>'}</table></div></div>
-  <div class="tbl" style="margin-top:12px"><table><tr><th>Data</th><th class="l">Ativo</th><th class="l">Tipo</th><th>Valor</th><th></th></tr>
-  ${L.map(v=>`<tr><td>${dbr(v.data)}</td><td class="l">${esc(v.ticker)}</td><td class="l">${esc(v.tipo)}</td><td>${brl(+v.valor)}</td><td><button class="small danger" data-del="${v.id}">✕</button></td></tr>`).join('')}</table></div>`;
+    <div class="note">Use só para o que o automático não cobre (ex.: algo de antes de ${dbr(provDesde())} ou fora da B3) — senão conta duas vezes. Proventos entram no resultado do ativo e <b>não</b> somam no patrimônio (o dinheiro aparece quando você atualiza o saldo da conta).</div>
+  ${L.length?`<div class="tbl" style="margin-top:10px"><table><tr><th>Data</th><th class="l">Ativo</th><th class="l">Tipo</th><th>Valor</th><th></th></tr>
+  ${L.map(v=>`<tr><td>${dbr(v.data)}</td><td class="l">${esc(v.ticker)}</td><td class="l">${esc(v.tipo)}</td><td>${brl(+v.valor)}</td><td><button class="small danger" data-del="${v.id}">✕</button></td></tr>`).join('')}</table></div>`:''}</div>`;
   document.getElementById('fProv').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);S.proventos.push({id:uid(),data:f.get('data'),ticker:f.get('ticker'),tipo:f.get('tipo'),valor:+f.get('valor')});save();toast('Provento registrado');render()};
   document.querySelectorAll('#s-prov [data-del]').forEach(b=>b.onclick=async()=>{if(await confirmar('Excluir este provento?')){S.proventos=S.proventos.filter(x=>x.id!==b.dataset.del);save();render()}});
 }
@@ -573,6 +593,7 @@ async function iniciar(){
   const cache=LS(KEY+'_cache')||{quotes:{},usd:null,cdi:[],ipca:[]};
   if(!d){S=seed();S.cache=cache;setSave('Arquivo de dados não existia — criado com os dados iniciais');await gravar()}
   else{S={...d,cache};setSave('Dados carregados ✓','pos')}
+  try{const r=await fetch(ghURL().replace(ARQ,'proventos_b3.json'),{headers:ghHdr(),cache:'no-store'});if(r.ok){S.cache.provB3=JSON.parse(b64dec((await r.json()).content));LS(KEY+'_cache',S.cache)}}catch(e){}
   render();atualizar();
 }
 iniciar();
