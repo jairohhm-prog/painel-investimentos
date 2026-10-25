@@ -211,14 +211,15 @@ function confirmar(msg){return new Promise(res=>{const m=document.createElement(
 /* ================= COTAÇÕES ================= */
 async function getJSON(u){const r=await fetch(u);if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}
 async function serieBCB(u){const j=await getJSON(u);return Array.isArray(j)?j:[]} // BCB devolve {erro} quando não há dado no período
+async function comRetry(fn,n=3){for(let i=0;;i++){try{return await fn()}catch(e){if(i>=n-1)throw e;await new Promise(r=>setTimeout(r,1200*(i+1)))}}} // brapi grátis limita requisições seguidas
 async function pool(items,n,fn){const out=[];let i=0;await Promise.all(Array.from({length:n},async()=>{while(i<items.length){const k=i++;try{out[k]=await fn(items[k])}catch(e){out[k]=null}}}));return out}
 function dataBCB(s){return s.split('-').reverse().join('/')}
 async function atualizar(){
   const st=document.getElementById('hStatus');st.textContent='Atualizando cotações…';
   const erros=[];const Q=S.cache.quotes;
   const b3=S.config.brapiToken?S.ativos.filter(a=>a.classe!=='cripto'):[];if(!S.config.brapiToken)erros.push('ações/FIIs (falta a chave brapi em Configurações)');
-  await pool(b3,4,async a=>{
-    try{const j=await getJSON(`https://brapi.dev/api/quote/${encodeURIComponent(a.ticker)}?token=${encodeURIComponent(S.config.brapiToken)}`);
+  await pool(b3,2,async a=>{
+    try{const j=await comRetry(()=>getJSON(`https://brapi.dev/api/quote/${encodeURIComponent(a.ticker)}?token=${encodeURIComponent(S.config.brapiToken)}`));
       const r=j.results&&j.results[0];if(!r||r.regularMarketPrice==null)throw 0;
       Q[a.ticker]={p:r.regularMarketPrice,chg:(r.regularMarketChangePercent||0)/100,t:Date.now(),moeda:'BRL'};
     }catch(e){erros.push(a.ticker)}
