@@ -230,6 +230,15 @@ function prepNums(root){(root||document).querySelectorAll('input[data-num]').for
   inp.addEventListener('blur',()=>{if(inp.value.trim()==='')return;const n=numBR(inp.value);if(!isNaN(n))inp.value=fmtIn(n,dec)})})}
 
 /* ================= COTAÇÕES ================= */
+// Dólar: consulta duas fontes e fica com a cotação mais recente (a AwesomeAPI grátis às vezes devolve valor atrasado)
+async function buscarDolar(){const c=[];
+  const ts=x=>{const n=+x;if(n>1e12)return n;if(n>1e9)return n*1000;const d=Date.parse(x);return isNaN(d)?0:d};
+  await Promise.all([
+    (async()=>{try{const j=await getJSON(`https://brapi.dev/api/v2/currency?currency=USD-BRL&token=${encodeURIComponent(S.config.brapiToken)}`);const x=(j.currency||[])[0];
+      if(x&&+x.bidPrice>0)c.push({v:+x.bidPrice,chg:(+x.percentageChange||0)/100,ref:ts(x.updatedAtTimestamp)||ts(x.updatedAtDate),fonte:'brapi'})}catch(e){}})(),
+    (async()=>{try{const j=await getJSON('https://economia.awesomeapi.com.br/json/last/USD-BRL');const x=j.USDBRL;
+      if(x&&+x.bid>0)c.push({v:+x.bid,chg:(+x.pctChange||0)/100,ref:ts(x.timestamp)||ts(x.create_date),fonte:'AwesomeAPI'})}catch(e){}})()]);
+  if(!c.length)throw new Error('sem dólar');c.sort((a,b)=>b.ref-a.ref);return {...c[0],t:Date.now()}}
 async function getJSON(u){const r=await fetch(u);if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}
 async function serieBCB(u){const j=await getJSON(u);return Array.isArray(j)?j:[]} // BCB devolve {erro} quando não há dado no período
 async function comRetry(fn,n=3){for(let i=0;;i++){try{return await fn()}catch(e){if(i>=n-1)throw e;await new Promise(r=>setTimeout(r,1200*(i+1)))}}} // brapi grátis limita requisições seguidas
@@ -250,7 +259,7 @@ async function atualizar(){
     const j=await getJSON(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`);
     cr.forEach(a=>{const x=j[a.cgId];if(x&&x.usd!=null)Q[a.ticker]={p:x.usd,chg:(x.usd_24h_change||0)/100,t:Date.now(),moeda:'USD'};else erros.push(a.ticker)});
   }catch(e){erros.push('Cripto (CoinGecko)')}
-  try{const j=await getJSON('https://economia.awesomeapi.com.br/json/last/USD-BRL');S.cache.usd={v:+j.USDBRL.bid,chg:(+j.USDBRL.pctChange||0)/100,t:Date.now()}}catch(e){erros.push('Dólar')}
+  try{S.cache.usd=await buscarDolar()}catch(e){erros.push('Dólar')}
   // Índices para a renda fixa
   const base=S.rendaFixa.reduce((m,r)=>r.dataBase&&r.dataBase<m?r.dataBase:m,HOJE());
   if(S.rendaFixa.some(r=>r.indexador==='CDI')){try{S.cache.cdi=await serieBCB(`https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados?formato=json&dataInicial=${dataBCB(base)}&dataFinal=${dataBCB(HOJE())}`)}catch(e){if(base<HOJE())erros.push('CDI')}}
@@ -377,7 +386,7 @@ function render(){const T=totais();
   document.getElementById('hTotal').textContent=brl(T.total);
   const base=T.total-T.varDia;
   const baseRV=Object.values(T.P).reduce((s,p)=>s+(p.chg!=null&&p.valor!=null?p.valor/(1+p.chg):0),0);
-  document.getElementById('hDia').innerHTML=`<div class="seg" id="segPer" style="margin:6px 0 4px">${Object.entries(PERIODOS).map(([k,n])=>`<button data-per="${k}" class="${PER===k?'on':''}">${n}</button>`).join('')}</div><div>Variação ${perLabel()} (ações, FIIs e cripto): <b class="${sgn(T.varDia)}">${T.varDia>=0?'+':''}${brl(T.varDia)} (${pct(baseRV?T.varDia/baseRV:0,2)})</b> · Dólar ${S.cache.usd?nf(S.cache.usd.v,4):'—'}</div>`;
+  document.getElementById('hDia').innerHTML=`<div class="seg" id="segPer" style="margin:6px 0 4px">${Object.entries(PERIODOS).map(([k,n])=>`<button data-per="${k}" class="${PER===k?'on':''}">${n}</button>`).join('')}</div><div>Variação ${perLabel()} (ações, FIIs e cripto): <b class="${sgn(T.varDia)}">${T.varDia>=0?'+':''}${brl(T.varDia)} (${pct(baseRV?T.varDia/baseRV:0,2)})</b> · Dólar ${S.cache.usd?`${nf(S.cache.usd.v,4)} <span class="${S.cache.usd.ref&&Date.now()-S.cache.usd.ref>18*3600e3?'warn':'muted'}" title="Fonte: ${esc(S.cache.usd.fonte||'')}">(${S.cache.usd.ref?new Date(S.cache.usd.ref).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—'})</span>`:'—'}</div>`;
   document.getElementById('segPer').onclick=e=>{const k=e.target.dataset.per;if(!k)return;PER=k;try{localStorage.setItem('painelInvest_v1_per',k)}catch(_){}render()};
   renderBanner();
   ({geral:rGeral,ativos:rAtivos,rf:rRF,lanc:rLanc,prov:rProv,aporte:rAporte,evol:rEvol,cfg:rCfg})[aba](T);
