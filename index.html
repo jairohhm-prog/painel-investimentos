@@ -79,6 +79,8 @@ section{display:none}section.on{display:block}
 .chart svg{width:100%;height:auto;display:block}
 .chart text{fill:var(--muted);font-size:11px}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-right:8px;vertical-align:middle}.seg button{border:none;border-radius:0;padding:3px 10px;font-size:12px;background:var(--card)}.seg button.on{background:var(--accent);color:#fff}
+.sinal{display:flex;flex-wrap:wrap;gap:6px;margin:-4px 0 12px}.sinal span{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:3px 9px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--muted);cursor:help}
+.sinal i{width:8px;height:8px;border-radius:50%;display:inline-block}.sinal .ok{background:var(--pos)}.sinal .at{background:var(--warn)}.sinal .er{background:var(--neg)}.sinal .ne{background:var(--line)}
 .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:13px;z-index:20}
 h3{font-size:13px;margin:16px 0 8px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
 </style>
@@ -102,6 +104,7 @@ h3{font-size:13px;margin:16px 0 8px;color:var(--muted);text-transform:uppercase;
       </div>
     </div>
   </header>
+  <div id="sinal" class="sinal"></div>
   <div id="banner"></div>
   <nav class="tabs" id="tabs">
     <button data-tab="geral" class="on">Visão geral</button>
@@ -195,7 +198,7 @@ async function gravar(){if(!GH||conflito)return;if(salvando){pendente=true;retur
   try{const body={message:'Painel: atualização '+new Date().toLocaleString('pt-BR'),content:b64enc(payload())};if(shaAtual)body.sha=shaAtual;
     const r=await fetch(ghURL(),{method:'PUT',headers:{...ghHdr(),'Content-Type':'application/json'},body:JSON.stringify(body)});
     if(r.status===409||r.status===422){conflito=true;setSave('Conflito','neg');renderBanner();return}
-    if(!r.ok)throw new Error('GitHub '+r.status);const j=await r.json();shaAtual=j.content.sha;setSave('Salvo ✓ '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),'pos');
+    if(!r.ok)throw new Error('GitHub '+r.status);const j=await r.json();shaAtual=j.content.sha;salvoEm=Date.now();renderSinal();setSave('Salvo ✓ '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),'pos');
   }catch(e){setSave('Erro ao salvar — '+e.message,'neg');toast('Não salvou no GitHub: '+e.message)}
   finally{salvando=false;if(pendente&&!conflito){pendente=false;gravar()}}}
 let tSave=null;
@@ -245,19 +248,19 @@ async function comRetry(fn,n=3){for(let i=0;;i++){try{return await fn()}catch(e)
 async function pool(items,n,fn){const out=[];let i=0;await Promise.all(Array.from({length:n},async()=>{while(i<items.length){const k=i++;try{out[k]=await fn(items[k])}catch(e){out[k]=null}}}));return out}
 function dataBCB(s){return s.split('-').reverse().join('/')}
 async function atualizar(){
-  const st=document.getElementById('hStatus');st.textContent='Atualizando cotações…';
+  const st=document.getElementById('hStatus');st.textContent='Atualizando cotações…';S.cache.rodada=Date.now();
   const erros=[];const Q=S.cache.quotes;
   const b3=S.config.brapiToken?S.ativos.filter(a=>a.classe!=='cripto'):[];if(!S.config.brapiToken)erros.push('ações/FIIs (falta a chave brapi em Configurações)');
   await pool(b3,2,async a=>{
     try{const j=await comRetry(()=>getJSON(`https://brapi.dev/api/quote/${encodeURIComponent(a.ticker)}?token=${encodeURIComponent(S.config.brapiToken)}`));
       const r=j.results&&j.results[0];if(!r||r.regularMarketPrice==null)throw 0;
-      Q[a.ticker]={p:r.regularMarketPrice,chg:(r.regularMarketChangePercent||0)/100,t:Date.now(),moeda:'BRL'};
+      Q[a.ticker]={p:r.regularMarketPrice,chg:(r.regularMarketChangePercent||0)/100,t:Date.now(),ref:Date.parse(r.regularMarketTime)||null,moeda:'BRL'};
     }catch(e){erros.push(a.ticker)}
   });
   const cr=S.ativos.filter(a=>a.classe==='cripto'&&a.cgId);
   try{const ids=[...new Set([...cr.map(a=>a.cgId),'tether'])].join(',');
-    const j=await getJSON(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`);
-    cr.forEach(a=>{const x=j[a.cgId];if(x&&x.usd!=null)Q[a.ticker]={p:x.usd,chg:(x.usd_24h_change||0)/100,t:Date.now(),moeda:'USD'};else erros.push(a.ticker)});
+    const j=await getJSON(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true&include_last_updated_at=true`);
+    cr.forEach(a=>{const x=j[a.cgId];if(x&&x.usd!=null)Q[a.ticker]={p:x.usd,chg:(x.usd_24h_change||0)/100,t:Date.now(),ref:x.last_updated_at?x.last_updated_at*1000:null,moeda:'USD'};else erros.push(a.ticker)});
   }catch(e){erros.push('Cripto (CoinGecko)')}
   try{S.cache.usd=await buscarDolar()}catch(e){erros.push('Dólar')}
   // Índices para a renda fixa
@@ -272,7 +275,7 @@ async function atualizar(){
   if(S.cache.criptoRef?.dia!==HOJE())carregarCriptoRef().then(()=>{LS(KEY+'_cache',S.cache);render()}).catch(()=>{}); // em segundo plano, 1x por dia
   S.cache.atualizadoEm=Date.now();
   const mud=snapshot();if(mud||preencheu)save();else LS(KEY+'_cache',S.cache);render();
-  st.innerHTML=`Cotações de ${new Date().toLocaleString('pt-BR')}`+(erros.length?` · <span class="warn">sem cotação: ${esc(erros.join(', '))}</span>`:'');
+  S.cache.errosRodada=erros;st.innerHTML=`Atualizado às ${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}`+(erros.length?` · <span class="warn">falhou: ${esc(erros.join(', '))}</span>`:'');renderSinal();
 }
 
 /* ================= CÁLCULOS ================= */
@@ -346,9 +349,13 @@ const PERIODOS={dia:'Dia',mes:'Mês',ano:'Ano',a12:'12 meses'};
 let PER='mes';try{PER=localStorage.getItem('painelInvest_v1_per')||'mes'}catch(e){}
 function perLabel(){return {dia:'no dia',mes:'no mês',ano:'no ano',a12:'em 12 meses'}[PER]}
 // variação de preço do ativo no período escolhido (fração), ou null se não houver referência
-function varPer(a){const q=S.cache.quotes[a.ticker];if(!q)return null;if(PER==='dia')return q.chg;
-  const ref=a.classe==='cripto'?S.cache.criptoRef?.refs?.[a.ticker]:S.cache.precosRef?.refs?.[a.ticker];if(!ref)return null;
-  const r=PER==='mes'?ref.fimMes:PER==='ano'?ref.fimAno:ref.ha12m;return r?q.p/r-1:null}
+function fxPer(){const u=S.cache.usd;if(!u)return 0;if(PER==='dia')return u.chg||0;const r=S.cache.precosRef?.refs?.USDBRL;if(!r)return 0;
+  const v=PER==='mes'?r.fimMes:PER==='ano'?r.fimAno:r.ha12m;return v?u.v/v-1:0}
+// variação de preço do ativo no período (fração). Cripto: em reais = variação em dólar × variação do dólar.
+function varPer(a){const q=S.cache.quotes[a.ticker];if(!q)return null;let v;
+  if(PER==='dia')v=q.chg;else{const ref=a.classe==='cripto'?S.cache.criptoRef?.refs?.[a.ticker]:S.cache.precosRef?.refs?.[a.ticker];if(!ref)return null;
+    const r=PER==='mes'?ref.fimMes:PER==='ano'?ref.fimAno:ref.ha12m;if(!r)return null;v=q.p/r-1}
+  return a.classe==='cripto'?(1+v)*(1+fxPer())-1:v}
 async function carregarCriptoRef(){const c=S.cache.criptoRef;if(c&&c.dia===HOJE())return;const out={dia:HOJE(),refs:{}};
   const hoje=new Date();const ymd=d=>d.toISOString().slice(0,10);const iniMes=ymd(new Date(Date.UTC(hoje.getUTCFullYear(),hoje.getUTCMonth(),1)));const iniAno=`${hoje.getUTCFullYear()}-01-01`;const h12=ymd(new Date(hoje-364*864e5));
   // API grátis do CoinGecko: até 365 dias e poucas chamadas por minuto -> busca 1x por dia, com pausa entre moedas
@@ -388,10 +395,26 @@ function render(){const T=totais();
   const baseRV=Object.values(T.P).reduce((s,p)=>s+(p.chg!=null&&p.valor!=null?p.valor/(1+p.chg):0),0);
   document.getElementById('hDia').innerHTML=`<div class="seg" id="segPer" style="margin:6px 0 4px">${Object.entries(PERIODOS).map(([k,n])=>`<button data-per="${k}" class="${PER===k?'on':''}">${n}</button>`).join('')}</div><div>Variação ${perLabel()} (ações, FIIs e cripto): <b class="${sgn(T.varDia)}">${T.varDia>=0?'+':''}${brl(T.varDia)} (${pct(baseRV?T.varDia/baseRV:0,2)})</b> · Dólar ${S.cache.usd?`${nf(S.cache.usd.v,4)} <span class="${S.cache.usd.ref&&Date.now()-S.cache.usd.ref>18*3600e3?'warn':'muted'}" title="Fonte: ${esc(S.cache.usd.fonte||'')}">(${S.cache.usd.ref?new Date(S.cache.usd.ref).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—'})</span>`:'—'}</div>`;
   document.getElementById('segPer').onclick=e=>{const k=e.target.dataset.per;if(!k)return;PER=k;try{localStorage.setItem('painelInvest_v1_per',k)}catch(_){}render()};
-  renderBanner();
+  renderBanner();renderSinal();
   ({geral:rGeral,ativos:rAtivos,rf:rRF,lanc:rLanc,prov:rProv,aporte:rAporte,evol:rEvol,cfg:rCfg})[aba](T);
   prepNums();
 }
+/* ---------- Sinaleiro: de onde vem cada número e de quando ---------- */
+let carregadoEm=null,salvoEm=null;
+function hm(t){if(!t)return '—';const d=new Date(t);const hoje=new Date().toDateString()===d.toDateString();return hoje?d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):d.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}
+function renderSinal(){const el=document.getElementById('sinal');if(!el||!S)return;const C=S.cache,Q=C.quotes||{},rod=C.rodada||0;const it=[];
+  const grupo=(nome,lista,fonte)=>{if(!lista.length)return;const ok=lista.filter(a=>Q[a.ticker]&&Q[a.ticker].t>=rod);const ref=Math.max(0,...ok.map(a=>Q[a.ticker].ref||0));
+    const cor=ok.length===lista.length?'ok':ok.length?'at':'er';const falt=lista.filter(a=>!ok.includes(a)).map(a=>a.ticker);
+    it.push([cor,`${nome} ${ok.length}/${lista.length} · ${hm(ref)}`,`Fonte: ${fonte}. Horário = último negócio informado pela fonte.${falt.length?' Sem cotação nesta atualização: '+falt.join(', ')+' (usando a última conhecida).':''}`])};
+  const pos=posicoes();const rel=a=>pos[a.ticker]?.qtd>0;
+  grupo('Ações/FIIs',S.ativos.filter(a=>a.classe!=='cripto'&&rel(a)),'brapi (B3)');grupo('Cripto',S.ativos.filter(a=>a.classe==='cripto'&&rel(a)),'CoinGecko');
+  const u=C.usd;if(u){const age=Date.now()-(u.ref||0);it.push([u.t<rod?'er':age<3*3600e3?'ok':age<36*3600e3?'at':'er',`Dólar ${nf(u.v,4)} · ${hm(u.ref)}`,`Fonte: ${u.fonte||'—'}. Afeta o valor em reais da cripto e do USDT.`])}else it.push(['er','Dólar —','Sem cotação do dólar'])
+  if(S.rendaFixa.some(r=>r.indexador==='TESOURO')){const d=Object.values(C.tesouro||{})[0]?.data;const age=d?Date.now()-Date.parse(d):1e12;it.push([age<4*864e5?'ok':age<8*864e5?'at':'er',`Tesouro · ${d?hm(Date.parse(d)):'—'}`,'Preço de resgate do Tesouro Direto (atualiza uma vez por dia útil).'])}
+  const ultCDI=(Array.isArray(C.cdi)&&C.cdi.length)?C.cdi[C.cdi.length-1].data:null;const ultIPCA=(Array.isArray(C.ipca)&&C.ipca.length)?C.ipca[C.ipca.length-1].data.slice(3):null;
+  it.push(['ne',`CDI ${ultCDI?ultCDI.slice(0,5):'—'} · IPCA ${ultIPCA||'—'}`,'Banco Central: último CDI diário e último IPCA mensal divulgados (meses ainda não divulgados usam o último IPCA).'])
+  const rb=C.provB3?.atualizadoEm;const ageR=rb?Date.now()-Date.parse(rb):1e12;it.push([ageR<36*3600e3?'ok':ageR<80*3600e3?'at':'er',`Robô B3 · ${rb?hm(Date.parse(rb)):'—'}`,'Robô diário no seu GitHub: proventos, bonificações e preços de referência (mês/ano/12 meses).'])
+  it.push([conflito?'er':'ok',`Dados · ${salvoEm?'salvo '+hm(salvoEm):'carregado '+hm(carregadoEm)}`,`Seus lançamentos no GitHub. Carregados às ${hm(carregadoEm)}${salvoEm?', último salvamento às '+hm(salvoEm):''}.`])
+  el.innerHTML=it.map(([c,t,tt])=>`<span title="${esc(tt)}"><i class="${c}"></i>${esc(t)}</span>`).join('')}
 function renderBanner(){const b=document.getElementById('banner');const u=S.config.ultimoBackup;const dias=u?diasEntre(u,HOJE()):null;
   const pend=S.rendaFixa.filter(r=>/confirmar/i.test(r.obs));let h='';
   if(conflito)h+=`<div class="banner"><span>⚠ Os dados foram alterados em outro aparelho enquanto este estava aberto. Sua última alteração aqui <b>não</b> foi salva. Recarregue e refaça.</span><button class="small primary" onclick="recarregar()">Recarregar dados</button></div>`;
@@ -415,7 +438,7 @@ function rGeral(T){const el=document.getElementById('s-geral');const M=S.config.
   const AP=autoProventos();const aReceber=AP.filter(x=>!x.recebido).reduce((s,x)=>s+x.liquido,0);
   const prov12=AP.filter(x=>x.recebido&&diasEntre(x.pagamento,HOJE())<=365).reduce((s,x)=>s+x.liquido,0)+S.proventos.filter(v=>diasEntre(v.data,HOJE())<=365).reduce((s,v)=>s+(+v.valor||0),0);
   el.innerHTML=`<div class="grid kpis">
-    <div class="card kpi"><div class="l">Patrimônio</div><div class="v">${brl(T.total)}</div></div>
+    <div class="card kpi"><div class="l">Patrimônio</div><div class="v">${brl(T.total)}</div>${(()=>{const h=[...S.historico].reverse().find(x=>x.data<HOJE());return h?`<div class="sub">vs. foto de ${dbr(h.data)}: <b class="${sgn(T.total-h.total)}">${T.total-h.total>=0?'+':''}${brl(T.total-h.total)}</b></div>`:''})()}</div>
     <div class="card kpi"><div class="l">Variação ${perLabel()}</div><div class="v ${sgn(T.varDia)}">${brl(T.varDia)}</div></div>
     <div class="card kpi"><div class="l">Patrimônio em BTC</div><div class="v">${totBTC?mq(nf(totBTC,4))+' ₿':'—'}</div></div>
     <div class="card kpi"><div class="l">Proventos 12 meses</div><div class="v">${brl(prov12)}</div><div class="sub">a receber: ${brl(aReceber)}</div></div>
@@ -448,7 +471,7 @@ function rAtivos(T){document.getElementById('s-ativos').innerHTML=`
   <h3>Ações</h3>${tabelaClasse(T,'acoes')}
   <h3>FIIs</h3>${tabelaClasse(T,'fii')}
   <h3>Cripto</h3>${tabelaClasse(T,'cripto')}
-  <div class="note">Preço médio vem dos lançamentos; o do saldo inicial é o da corretora (ou o preço de ${dbr(S.config.inicio)} quando não informado) e pode ser editado na aba Lançamentos. Resultado = valor atual − custo + proventos recebidos + vendas realizadas. Metas (pela convicção) e preços-teto são editados em Configurações. A coluna de variação segue o período escolhido no topo (Dia, Mês, Ano, 12 meses): é a variação de preço do ativo — em cripto, em dólar — e o valor em R$ aplica essa variação à posição atual.</div>`}
+  <div class="note">Preço médio vem dos lançamentos; o do saldo inicial é o da corretora (ou o preço de ${dbr(S.config.inicio)} quando não informado) e pode ser editado na aba Lançamentos. Resultado = valor atual − custo + proventos recebidos + vendas realizadas. Metas (pela convicção) e preços-teto são editados em Configurações. A coluna de variação segue o período escolhido no topo (Dia, Mês, Ano, 12 meses): é a variação de preço do ativo — em cripto, já em reais (variação em dólar combinada com a do dólar) — e o valor em R$ aplica essa variação à posição atual.</div>`}
 
 function cardTesouro(){const L=S.rendaFixa.filter(r=>r.indexador==='TESOURO');if(!L.length)return '';
   const rows=L.map(r=>{const q=S.cache.tesouro?.[r.titulo];const mer=q&&r.qtdTitulos?q.pu*r.qtdTitulos:null;const cur=curvaTesouro(r);const g=mer!=null?mer-r.valorBase:null;
@@ -746,6 +769,7 @@ async function iniciar(){
   const cache=LS(KEY+'_cache')||{quotes:{},usd:null,cdi:[],ipca:[]};
   if(!d){S=migrar(seed());S.cache=cache;setSave('Arquivo de dados não existia — criado com os dados iniciais');await gravar()}
   else{S=migrar({...d,cache});setSave('Dados carregados ✓','pos')}
+  carregadoEm=Date.now();
   try{const r=await fetch(ghURL().replace(ARQ,'precos_ref.json'),{headers:ghHdr(),cache:'no-store'});if(r.ok)S.cache.precosRef=JSON.parse(b64dec((await r.json()).content))}catch(e){}
   try{const r=await fetch(ghURL().replace(ARQ,'proventos_b3.json'),{headers:ghHdr(),cache:'no-store'});if(r.ok){S.cache.provB3=JSON.parse(b64dec((await r.json()).content));LS(KEY+'_cache',S.cache)}}catch(e){}
   aplicarEventos();render();atualizar();
