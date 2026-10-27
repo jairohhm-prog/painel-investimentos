@@ -9,7 +9,7 @@
 :root{
   --bg:#f6f5f2;--card:#ffffff;--fg:#1d1c1a;--muted:#6f6b64;--line:#e4e1da;--soft:#f0eee9;
   --accent:#1f5f8b;--accent-soft:#e3eef6;--pos:#1d7a46;--neg:#b23a32;--warn:#a86a00;--warn-soft:#fff4dc;
-  --c-rf:#4a7fa8;--c-caixa:#8fb3cf;--c-acoes:#c26b3a;--c-fii:#8a6bb3;--c-cripto:#d9a400;
+  --c-rf:#4a7fa8;--c-caixa:#8fb3cf;--c-acoes:#c26b3a;--c-fii:#8a6bb3;--c-cripto:#d9a400;--c-eua:#3f9a8c;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#161615;--card:#201f1d;--fg:#ecebe7;--muted:#a19d95;--line:#33312e;--soft:#2a2926;
@@ -113,6 +113,7 @@ h3{font-size:13px;margin:16px 0 8px;color:var(--muted);text-transform:uppercase;
     <button data-tab="lanc">Lançamentos</button>
     <button data-tab="prov">Proventos</button>
     <button data-tab="aporte">Aporte</button>
+    <button data-tab="analista">Analista</button>
     <button data-tab="evol">Evolução</button>
     <button data-tab="cfg">Configurações</button>
   </nav>
@@ -123,6 +124,7 @@ h3{font-size:13px;margin:16px 0 8px;color:var(--muted);text-transform:uppercase;
   <section id="s-lanc"></section>
   <section id="s-prov"></section>
   <section id="s-aporte"></section>
+  <section id="s-analista"></section>
   <section id="s-evol"></section>
   <section id="s-cfg"></section>
 </div>
@@ -131,9 +133,11 @@ h3{font-size:13px;margin:16px 0 8px;color:var(--muted);text-transform:uppercase;
 /* ================= ESTADO ================= */
 const KEY='painelInvest_v1';
 const HOJE=()=>new Date().toISOString().slice(0,10);
-const CLASSES={rf:{n:'Renda Fixa',c:'var(--c-rf)'},caixa:{n:'Caixa & Recebíveis',c:'var(--c-caixa)'},acoes:{n:'Ações',c:'var(--c-acoes)'},fii:{n:'FIIs',c:'var(--c-fii)'},cripto:{n:'Cripto',c:'var(--c-cripto)'}};
+const CLASSES={rf:{n:'Renda Fixa',c:'var(--c-rf)'},caixa:{n:'Caixa & Recebíveis',c:'var(--c-caixa)'},acoes:{n:'Ações',c:'var(--c-acoes)'},fii:{n:'FIIs',c:'var(--c-fii)'},eua:{n:'EUA (ETF)',c:'var(--c-eua)'},cripto:{n:'Cripto',c:'var(--c-cripto)'}};
 // Grupos de meta: Renda Fixa + Caixa compartilham a mesma meta
-const GRUPOS={rfc:{n:'Renda Fixa + Caixa',cls:['rf','caixa'],c:'var(--c-rf)'},acoes:{n:'Ações',cls:['acoes'],c:'var(--c-acoes)'},fii:{n:'FIIs',cls:['fii'],c:'var(--c-fii)'},cripto:{n:'Cripto',cls:['cripto'],c:'var(--c-cripto)'}};
+const GRUPOS={rfc:{n:'Renda Fixa + Caixa',cls:['rf','caixa'],c:'var(--c-rf)'},acoes:{n:'Ações',cls:['acoes'],c:'var(--c-acoes)'},fii:{n:'FIIs',cls:['fii'],c:'var(--c-fii)'},eua:{n:'EUA (ETF)',cls:['eua'],c:'var(--c-eua)'},cripto:{n:'Cripto',cls:['cripto'],c:'var(--c-cripto)'}};
+const DOLAR=c=>c==='cripto'||c==='eua'; // classes cotadas em dólar
+const FAIXAS0={rfc:{min:10,neutro:15,max:30},acoes:{min:5,neutro:10,max:20},fii:{min:5,neutro:10,max:15},eua:{min:0,neutro:5,max:10},cripto:{min:55,neutro:60,max:65}};
 
 function uid(){return Math.random().toString(36).slice(2,10)}
 function seed(){
@@ -202,7 +206,8 @@ async function gravar(){if(!GH||conflito)return;if(salvando){pendente=true;retur
   }catch(e){setSave('Erro ao salvar — '+e.message,'neg');toast('Não salvou no GitHub: '+e.message)}
   finally{salvando=false;if(pendente&&!conflito){pendente=false;gravar()}}}
 let tSave=null;
-function save(){LS(KEY+'_cache',S.cache);if(!GH)return;setSave('Alterações pendentes…');clearTimeout(tSave);tSave=setTimeout(gravar,800)}
+function cacheLeve(){const {fundamentos,...c}=S.cache;return c}
+function save(){LS(KEY+'_cache',cacheLeve());if(!GH)return;setSave('Alterações pendentes…');clearTimeout(tSave);tSave=setTimeout(gravar,800)}
 async function recarregar(){conflito=false;try{const d=await ghLer();if(d){S={...d,cache:S.cache}};render();toast('Dados recarregados do GitHub')}catch(e){toast(e.message)}}
 
 /* ================= FORMATAÇÃO ================= */
@@ -215,7 +220,7 @@ const brlP=v=>v==null||isNaN(v)?'—':v.toLocaleString('pt-BR',{style:'currency'
 const usd=v=>v==null||isNaN(v)?'—':'US$ '+nf(v,v<1?6:2);
 const pct=(v,d=1)=>v==null||isNaN(v)||!isFinite(v)?'—':(v*100).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d})+'%';
 const sgn=v=>v>0?'pos':v<0?'neg':'';
-const qtdf=(v,cls)=>PRIV?'•••':cls==='cripto'?nf(v,v<10?8:2):nf(v,0);
+const qtdf=(v,cls)=>PRIV?'•••':(cls==='cripto'||cls==='eua')?nf(v,v<10?8:2):nf(v,0);
 const dbr=s=>s?s.split('-').reverse().join('/'):'';
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function toast(m){const t=document.createElement('div');t.className='toast';t.textContent=m;document.body.appendChild(t);setTimeout(()=>t.remove(),2600)}
@@ -250,7 +255,7 @@ function dataBCB(s){return s.split('-').reverse().join('/')}
 async function atualizar(){
   const st=document.getElementById('hStatus');st.textContent='Atualizando cotações…';S.cache.rodada=Date.now();
   const erros=[];const Q=S.cache.quotes;
-  const b3=S.config.brapiToken?S.ativos.filter(a=>a.classe!=='cripto'):[];if(!S.config.brapiToken)erros.push('ações/FIIs (falta a chave brapi em Configurações)');
+  const b3=S.config.brapiToken?S.ativos.filter(a=>(a.classe==='acoes'||a.classe==='fii')):[];if(!S.config.brapiToken)erros.push('ações/FIIs (falta a chave brapi em Configurações)');
   await pool(b3,2,async a=>{
     try{const j=await comRetry(()=>getJSON(`https://brapi.dev/api/quote/${encodeURIComponent(a.ticker)}?token=${encodeURIComponent(S.config.brapiToken)}`));
       const r=j.results&&j.results[0];if(!r||r.regularMarketPrice==null)throw 0;
@@ -263,6 +268,7 @@ async function atualizar(){
     cr.forEach(a=>{const x=j[a.cgId];if(x&&x.usd!=null)Q[a.ticker]={p:x.usd,chg:(x.usd_24h_change||0)/100,t:Date.now(),ref:x.last_updated_at?x.last_updated_at*1000:null,moeda:'USD'};else erros.push(a.ticker)});
   }catch(e){erros.push('Cripto (CoinGecko)')}
   try{S.cache.usd=await buscarDolar()}catch(e){erros.push('Dólar')}
+  S.ativos.filter(a=>a.classe==='eua').forEach(a=>{const u=S.cache.precosRef?.refs?.[a.ticker]?.ultimo;if(u&&u.p)Q[a.ticker]={p:u.p,chg:u.chg||0,t:Date.now(),ref:Date.parse(u.data+'T21:00:00Z')||null,moeda:'USD'};else erros.push(a.ticker+' (robô)')});
   // Índices para a renda fixa
   const base=S.rendaFixa.reduce((m,r)=>r.dataBase&&r.dataBase<m?r.dataBase:m,HOJE());
   if(S.rendaFixa.some(r=>r.indexador==='CDI')){try{S.cache.cdi=await serieBCB(`https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados?formato=json&dataInicial=${dataBCB(base)}&dataFinal=${dataBCB(HOJE())}`)}catch(e){if(base<HOJE())erros.push('CDI')}}
@@ -272,15 +278,15 @@ async function atualizar(){
   if(S.rendaFixa.some(r=>r.indexador==='IPCA'||(r.indexador==='TESOURO'&&/IPCA/.test(r.titulo||'')))){try{const b=new Date(base);b.setMonth(b.getMonth()-1);S.cache.ipca=await serieBCB(`https://api.bcb.gov.br/dados/serie/bcdata.sgs.433/dados?formato=json&dataInicial=${dataBCB(b.toISOString().slice(0,10))}&dataFinal=${dataBCB(HOJE())}`)}catch(e){S.cache.ipca=S.cache.ipca||[];if(diasEntre(base,HOJE())>45)erros.push('IPCA')}}
   // preencher preço dos saldos iniciais
   let preencheu=false;S.lancamentos.forEach(l=>{if(l.inicial&&l.preco==null&&Q[l.ticker]){preencheu=true;const a=ativo(l.ticker);l.preco=Q[l.ticker].p*(a&&a.classe==='cripto'?(S.cache.usd?.v||0):1);l.precoAuto=true}});
-  if(S.cache.criptoRef?.dia!==HOJE())carregarCriptoRef().then(()=>{LS(KEY+'_cache',S.cache);render()}).catch(()=>{}); // em segundo plano, 1x por dia
+  if(S.cache.criptoRef?.dia!==HOJE())carregarCriptoRef().then(()=>{LS(KEY+'_cache',cacheLeve());render()}).catch(()=>{}); // em segundo plano, 1x por dia
   S.cache.atualizadoEm=Date.now();
-  const mud=snapshot();if(mud||preencheu)save();else LS(KEY+'_cache',S.cache);render();
+  const mud=snapshot();if(mud||preencheu)save();else LS(KEY+'_cache',cacheLeve());render();
   S.cache.errosRodada=erros;st.innerHTML=`Atualizado às ${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}`+(erros.length?` · <span class="warn">falhou: ${esc(erros.join(', '))}</span>`:'');renderSinal();
 }
 
 /* ================= CÁLCULOS ================= */
 const ativo=t=>S.ativos.find(a=>a.ticker===t);
-function precoBRL(a){const q=S.cache.quotes[a.ticker];if(!q)return null;return a.classe==='cripto'?q.p*(S.cache.usd?.v||NaN):q.p}
+function precoBRL(a){const q=S.cache.quotes[a.ticker];if(!q)return null;return DOLAR(a.classe)?q.p*(S.cache.usd?.v||NaN):q.p}
 function posicoes(){
   const P={};S.ativos.forEach(a=>P[a.ticker]={a,qtd:0,custo:0,realizado:0,prov:0});
   [...S.lancamentos].sort((x,y)=>x.data.localeCompare(y.data)).forEach(l=>{
@@ -295,7 +301,7 @@ function posicoes(){
     p.chg=varPer(p.a);p.varDia=p.valor!=null&&p.chg!=null?p.valor-p.valor/(1+p.chg):0;
     p.resultado=p.valor!=null?p.valor-p.custo+p.prov+p.realizado:null;p.resPct=p.custo>0&&p.resultado!=null?p.resultado/p.custo:null;
     const t=+p.a.teto||0;p.teto=t||null;p.upside=t&&p.preco?t/p.preco-1:null;
-    p.acimaTeto=p.a.classe!=='cripto'&&t>0&&p.preco!=null&&p.preco>t;});
+    p.acimaTeto=(p.a.classe==='acoes'||p.a.classe==='fii')&&t>0&&p.preco!=null&&p.preco>t;});
   return P;
 }
 function diasEntre(a,b){return Math.round((new Date(b)-new Date(a))/864e5)}
@@ -326,14 +332,15 @@ function autoProventos(){const ev=S.cache.provB3?.eventos||[];const d0=provDesde
   return out}
 /* ---------- Metas e preço-teto ---------- */
 const CONV_TXT=['Fora da meta','Muito baixa','Baixa','Média','Alta','Muito alta'];
-function migrar(D){D.config=D.config||{};D.config.tetoMax=D.config.tetoMax||{acoes:15,fii:30};D.config.dyAlvo=D.config.dyAlvo||{acoes:6,fii:9};
+function migrar(D){D.config=D.config||{};if(!D.config.faixas){D.config.faixas=JSON.parse(JSON.stringify(FAIXAS0));D.config.metas=Object.fromEntries(Object.entries(FAIXAS0).map(([k,v])=>[k,v.neutro]))}D.config.tetoMax=D.config.tetoMax||{acoes:15,fii:30};D.config.dyAlvo=D.config.dyAlvo||{acoes:6,fii:9};
   const q={};(D.lancamentos||[]).forEach(l=>q[l.ticker]=(q[l.ticker]||0)+(l.tipo==='V'?-1:1)*l.qtd);
-  (D.ativos||[]).forEach(a=>{if(a.classe!=='cripto'&&a.conviccao==null){const w=+a.peso||0;a.conviccao=!(q[a.ticker]>0)&&w<=1?0:w>=10?5:w>=7?4:w>=5?3:w>=2?2:w>0?1:0}
-    if(a.classe!=='cripto'&&a.teto==null){a.teto=+a.tetoJairo||+a.tetoSuno||+a.tetoInter||0;a.tetoOrigem=a.teto?'manual':'';a.tetoRevisao=null}
-    delete a.tetoJairo;delete a.tetoSuno;delete a.tetoInter;if(a.classe!=='cripto')delete a.peso});return D}
+  (D.ativos||[]).forEach(a=>{if((a.classe==='acoes'||a.classe==='fii')&&a.conviccao==null){const w=+a.peso||0;a.conviccao=!(q[a.ticker]>0)&&w<=1?0:w>=10?5:w>=7?4:w>=5?3:w>=2?2:w>0?1:0}
+    if((a.classe==='acoes'||a.classe==='fii')&&a.teto==null){a.teto=+a.tetoJairo||+a.tetoSuno||+a.tetoInter||0;a.tetoOrigem=a.teto?'manual':'';a.tetoRevisao=null}
+    delete a.tetoJairo;delete a.tetoSuno;delete a.tetoInter;if(a.classe!=='cripto'&&a.classe!=='eua')delete a.peso});
+  Object.keys(D.config.faixas||{}).forEach(k=>{if(D.config.faixas[k].neutro==null)D.config.faixas[k].neutro=D.config.metas?.[k]});return D}
 // % alvo de cada ativo dentro da classe (0..1). Ações/FIIs: convicção com teto máximo por ativo; cripto: % digitado.
 function metaClasse(cls){const L=S.ativos.filter(a=>a.classe===cls);const m={};
-  if(cls==='cripto'){L.forEach(a=>m[a.ticker]=(+a.peso||0)/100);return m}
+  if(DOLAR(cls)){L.forEach(a=>m[a.ticker]=(+a.peso||0)/100);return m}
   const cap=(+S.config.tetoMax?.[cls]||100)/100;let ativos=L.filter(a=>+a.conviccao>0);L.forEach(a=>m[a.ticker]=0);
   if(!ativos.length)return m;if(ativos.length*cap<1-1e-9){const t=ativos.reduce((s,a)=>s+ +a.conviccao,0);ativos.forEach(a=>m[a.ticker]=a.conviccao/t);m._capInviavel=true;return m}
   let livres=[...ativos],resto=1;for(let it=0;it<20;it++){const t=livres.reduce((s,a)=>s+ +a.conviccao,0);let estourou=false;
@@ -355,7 +362,7 @@ function fxPer(){const u=S.cache.usd;if(!u)return 0;if(PER==='dia')return u.chg|
 function varPer(a){const q=S.cache.quotes[a.ticker];if(!q)return null;let v;
   if(PER==='dia')v=q.chg;else{const ref=a.classe==='cripto'?S.cache.criptoRef?.refs?.[a.ticker]:S.cache.precosRef?.refs?.[a.ticker];if(!ref)return null;
     const r=PER==='mes'?ref.fimMes:PER==='ano'?ref.fimAno:ref.ha12m;if(!r)return null;v=q.p/r-1}
-  return a.classe==='cripto'?(1+v)*(1+fxPer())-1:v}
+  return DOLAR(a.classe)?(1+v)*(1+fxPer())-1:v}
 async function carregarCriptoRef(){const c=S.cache.criptoRef;if(c&&c.dia===HOJE())return;const out={dia:HOJE(),refs:{}};
   const hoje=new Date();const ymd=d=>d.toISOString().slice(0,10);const iniMes=ymd(new Date(Date.UTC(hoje.getUTCFullYear(),hoje.getUTCMonth(),1)));const iniAno=`${hoje.getUTCFullYear()}-01-01`;const h12=ymd(new Date(hoje-364*864e5));
   // API grátis do CoinGecko: até 365 dias e poucas chamadas por minuto -> busca 1x por dia, com pausa entre moedas
@@ -375,8 +382,11 @@ function aplicarEventos(){const ev=S.cache.provB3?.bonificacoes||[];const d0=pro
       obs:bon?'Automático (B3) — informe o custo atribuído no preço':'Automático (B3) — fator '+nf(e.fator,4)});novos.push(`${e.ticker}: ${nome} ${delta>0?'+':''}${delta}`)}
     S.eventosAplicados.push(key)});
   if(novos.length){save();toast('Lançado automaticamente: '+novos.join('; '))}}
+/* ---------- Metas táticas (vindas do analista) ---------- */
+function analiseValida(){const a=S.cache.analise;return a&&a.metasTaticas&&a.data&&diasEntre(a.data,HOJE())<=45?a:null}
+function metasAtuais(){const a=analiseValida();const M={...S.config.metas};if(a)Object.keys(M).forEach(k=>{if(a.metasTaticas[k]!=null)M[k]=+a.metasTaticas[k]});return M}
 function totais(){
-  const P=posicoes();const cls={rf:0,caixa:0,acoes:0,fii:0,cripto:0};let varDia=0,falta=0;
+  const P=posicoes();const cls={rf:0,caixa:0,acoes:0,fii:0,eua:0,cripto:0};let varDia=0,falta=0;
   Object.values(P).forEach(p=>{if(p.valor!=null){cls[p.a.classe]+=p.valor;varDia+=p.varDia}else if(p.qtd>0)falta++});
   S.rendaFixa.forEach(r=>{const v=valorRF(r);if(!isNaN(v))cls[r.grupo]+=v});
   const total=Object.values(cls).reduce((a,b)=>a+b,0);
@@ -396,7 +406,7 @@ function render(){const T=totais();
   document.getElementById('hDia').innerHTML=`<div class="seg" id="segPer" style="margin:6px 0 4px">${Object.entries(PERIODOS).map(([k,n])=>`<button data-per="${k}" class="${PER===k?'on':''}">${n}</button>`).join('')}</div><div>Variação ${perLabel()} (ações, FIIs e cripto): <b class="${sgn(T.varDia)}">${T.varDia>=0?'+':''}${brl(T.varDia)} (${pct(baseRV?T.varDia/baseRV:0,2)})</b> · Dólar ${S.cache.usd?`${nf(S.cache.usd.v,4)} <span class="${S.cache.usd.ref&&Date.now()-S.cache.usd.ref>18*3600e3?'warn':'muted'}" title="Fonte: ${esc(S.cache.usd.fonte||'')}">(${S.cache.usd.ref?new Date(S.cache.usd.ref).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—'})</span>`:'—'}</div>`;
   document.getElementById('segPer').onclick=e=>{const k=e.target.dataset.per;if(!k)return;PER=k;try{localStorage.setItem('painelInvest_v1_per',k)}catch(_){}render()};
   renderBanner();renderSinal();
-  ({geral:rGeral,ativos:rAtivos,rf:rRF,lanc:rLanc,prov:rProv,aporte:rAporte,evol:rEvol,cfg:rCfg})[aba](T);
+  ({geral:rGeral,ativos:rAtivos,rf:rRF,lanc:rLanc,prov:rProv,aporte:rAporte,analista:rAnalista,evol:rEvol,cfg:rCfg})[aba](T);
   prepNums();
 }
 /* ---------- Sinaleiro: de onde vem cada número e de quando ---------- */
@@ -407,7 +417,7 @@ function renderSinal(){const el=document.getElementById('sinal');if(!el||!S)retu
     const cor=ok.length===lista.length?'ok':ok.length?'at':'er';const falt=lista.filter(a=>!ok.includes(a)).map(a=>a.ticker);
     it.push([cor,`${nome} ${ok.length}/${lista.length} · ${hm(ref)}`,`Fonte: ${fonte}. Horário = último negócio informado pela fonte.${falt.length?' Sem cotação nesta atualização: '+falt.join(', ')+' (usando a última conhecida).':''}`])};
   const pos=posicoes();const rel=a=>pos[a.ticker]?.qtd>0;
-  grupo('Ações/FIIs',S.ativos.filter(a=>a.classe!=='cripto'&&rel(a)),'brapi (B3)');grupo('Cripto',S.ativos.filter(a=>a.classe==='cripto'&&rel(a)),'CoinGecko');
+  grupo('Ações/FIIs',S.ativos.filter(a=>(a.classe==='acoes'||a.classe==='fii')&&rel(a)),'brapi (B3)');grupo('EUA',S.ativos.filter(a=>a.classe==='eua'&&rel(a)),'robô diário (Yahoo Finance, fechamento)');grupo('Cripto',S.ativos.filter(a=>a.classe==='cripto'&&rel(a)),'CoinGecko');
   const u=C.usd;if(u){const age=Date.now()-(u.ref||0);it.push([u.t<rod?'er':age<3*3600e3?'ok':age<36*3600e3?'at':'er',`Dólar ${nf(u.v,4)} · ${hm(u.ref)}`,`Fonte: ${u.fonte||'—'}. Afeta o valor em reais da cripto e do USDT.`])}else it.push(['er','Dólar —','Sem cotação do dólar'])
   if(S.rendaFixa.some(r=>r.indexador==='TESOURO')){const d=Object.values(C.tesouro||{})[0]?.data;const age=d?Date.now()-Date.parse(d):1e12;it.push([age<4*864e5?'ok':age<8*864e5?'at':'er',`Tesouro · ${d?hm(Date.parse(d)):'—'}`,'Preço de resgate do Tesouro Direto (atualiza uma vez por dia útil).'])}
   const ultCDI=(Array.isArray(C.cdi)&&C.cdi.length)?C.cdi[C.cdi.length-1].data:null;const ultIPCA=(Array.isArray(C.ipca)&&C.ipca.length)?C.ipca[C.ipca.length-1].data.slice(3):null;
@@ -426,7 +436,7 @@ function renderBanner(){const b=document.getElementById('banner');const u=S.conf
 function confirmarTaxas(){S.rendaFixa.forEach(r=>{if(/confirmar/i.test(r.obs))r.obs=''});save();render();toast('Taxas confirmadas')}
 function barra(atual,meta,cor){const max=Math.max(atual,meta,0.0001)*1.15;return `<div class="bar"><i style="width:${Math.min(100,atual/max*100)}%;background:${cor}"></i><b style="left:${Math.min(100,meta/max*100)}%" title="Meta"></b></div>`}
 
-function rGeral(T){const el=document.getElementById('s-geral');const M=S.config.metas;const al=S.config.alerta/100;
+function rGeral(T){const el=document.getElementById('s-geral');const M=metasAtuais();const al=S.config.alerta/100;
   let rows='';Object.entries(GRUPOS).forEach(([k,g])=>{const v=T.grp[k];const a=T.total?v/T.total:0;const m=(M[k]||0)/100;const d=a-m;
     const status=Math.abs(d)>al?`<span class="tag warn">${d>0?'acima':'abaixo'} da meta</span>`:'<span class="tag">dentro</span>';
     rows+=`<tr><td><span class="dot" style="background:${g.c}"></span>${g.n}</td><td>${brl(v)}</td><td>${pct(a)}</td><td>${pct(m,0)}</td><td class="${Math.abs(d)>al?'warn':''}">${d>0?'+':''}${pct(d)}</td><td>${barra(a,m,g.c)}</td><td>${status}</td></tr>`;
@@ -456,7 +466,7 @@ function rGeral(T){const el=document.getElementById('s-geral');const M=S.config.
 function tabelaClasse(T,cls){
   const MC=metaClasse(cls);const ps=Object.values(T.P).filter(p=>p.a.classe===cls&&(p.qtd>0||MC[p.a.ticker]>0));
   const tot=ps.reduce((s,p)=>s+(p.valor||0),0);
-  const cri=cls==='cripto';let tr='';let tRes=0,tProv=0,tVar=0;
+  const cri=DOLAR(cls);let tr='';let tRes=0,tProv=0,tVar=0;
   ps.sort((a,b)=>(b.valor||0)-(a.valor||0)).forEach(p=>{const at=tot?(p.valor||0)/tot:0;const mt=MC[p.a.ticker]||0;const q=S.cache.quotes[p.a.ticker];
     tRes+=p.resultado||0;tProv+=p.prov;tVar+=p.varDia||0;
     tr+=`<tr><td><b>${esc(p.a.ticker)}</b> <span class="muted">${esc(p.a.nome)}</span>${p.acimaTeto?' <span class="tag neg">acima do teto</span>':''}</td>
@@ -470,6 +480,7 @@ function tabelaClasse(T,cls){
 function rAtivos(T){document.getElementById('s-ativos').innerHTML=`
   <h3>Ações</h3>${tabelaClasse(T,'acoes')}
   <h3>FIIs</h3>${tabelaClasse(T,'fii')}
+  ${S.ativos.some(a=>a.classe==='eua')?`<h3>EUA (ETF)</h3>${tabelaClasse(T,'eua')}`:''}
   <h3>Cripto</h3>${tabelaClasse(T,'cripto')}
   <div class="note">Preço médio vem dos lançamentos; o do saldo inicial é o da corretora (ou o preço de ${dbr(S.config.inicio)} quando não informado) e pode ser editado na aba Lançamentos. Resultado = valor atual − custo + proventos recebidos + vendas realizadas. Metas (pela convicção) e preços-teto são editados em Configurações. A coluna de variação segue o período escolhido no topo (Dia, Mês, Ano, 12 meses): é a variação de preço do ativo — em cripto, já em reais (variação em dólar combinada com a do dólar) — e o valor em R$ aplica essa variação à posição atual.</div>`}
 
@@ -511,6 +522,7 @@ function rRF(T){let tr='';S.rendaFixa.forEach(r=>{const v=valorRF(r);
 function optsAtivos(sel){return S.ativos.map(a=>`<option value="${esc(a.ticker)}"${a.ticker===sel?' selected':''}>${esc(a.ticker)} — ${esc(a.nome)}</option>`).join('')}
 // Confere o ticker na fonte de cotação e cadastra o ativo. Devolve o ticker cadastrado (ou lança erro).
 async function criarAtivo({ticker,cls,nome,conv,cgId,peso}){const t=String(ticker||'').trim().toUpperCase();if(!t)throw new Error('informe o ticker');if(ativo(t))return t;
+  if(cls==='eua'){S.ativos.push({id:uid(),ticker:t,nome:nome||t,classe:'eua',peso:peso||0,setor:'',cgId:''});return t}
   if(cls==='cripto'){const id=String(cgId||'').trim().toLowerCase();if(!id)throw new Error('informe o ID do CoinGecko');const j=await getJSON(`https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(id)}&vs_currencies=usd`);if(!j[id])throw new Error('ID CoinGecko não encontrado');
     S.ativos.push({id:uid(),ticker:t,nome:nome||t,classe:'cripto',peso:peso||0,setor:'',cgId:id})}
   else{let r=null;try{const j=await getJSON(`https://brapi.dev/api/quote/${encodeURIComponent(t)}?token=${encodeURIComponent(S.config.brapiToken)}`);r=j.results&&j.results[0]}catch(e){}if(!r||r.regularMarketPrice==null)throw new Error('ticker não encontrado na B3');
@@ -523,7 +535,7 @@ function rLanc(T){const L=[...S.lancamentos].sort((a,b)=>b.data.localeCompare(a.
     <label>Data<input type="date" name="data" value="${HOJE()}" required></label>
     <label>Ativo<select name="ticker" id="selAtivoL">${optsAtivos()}<option value="__novo">+ Novo ativo…</option></select></label>
     <span id="novoAtivo" style="display:none;gap:8px;align-items:flex-end;flex-wrap:wrap;padding:6px 8px;border:1px dashed var(--accent);border-radius:8px">
-      <label>Classe<select name="ncls" id="nclsL"><option value="acoes">Ação</option><option value="fii">FII</option><option value="cripto">Cripto</option></select></label>
+      <label>Classe<select name="ncls" id="nclsL"><option value="acoes">Ação</option><option value="fii">FII</option><option value="eua">ETF EUA</option><option value="cripto">Cripto</option></select></label>
       <label>Ticker<input name="nticker" style="width:95px" placeholder="PETR4"></label>
       <label id="ncgL" style="display:none">ID CoinGecko<input name="ncg" style="width:140px" placeholder="chainlink"></label></span>
     <label>Tipo<select name="tipo"><option value="C">Compra</option><option value="V">Venda</option></select></label>
@@ -587,7 +599,7 @@ function distribuir(valor,itens){ // itens: {k,atual,alvo} -> aloca só em quem 
   if(sg>=valor)return gaps.map(g=>valor*g/sg);
   const resto=valor-sg;const sa=itens.reduce((s,i)=>s+i.peso,0)||1;return gaps.map((g,k)=>g+resto*itens[k].peso/sa);
 }
-function rAporte(T){const el=document.getElementById('s-aporte');const M=S.config.metas;const A=ultimoAporte;
+function rAporte(T){const el=document.getElementById('s-aporte');const M=metasAtuais();const A=ultimoAporte;
   const ks=Object.keys(GRUPOS);const novoTotal=T.total+A;
   const dC=distribuir(A,ks.map(k=>({k,atual:T.grp[k],alvo:(M[k]||0)/100*novoTotal,peso:+M[k]||0})));
   let html=`<div class="card"><h2>Calculadora de aporte</h2><form class="row" id="fAp"><label>Valor do aporte (R$)<input name="v" type="text" inputmode="decimal" data-num data-dec="2" step="any" value="${A}" style="width:160px"></label><button class="primary">Calcular</button></form>
@@ -598,14 +610,78 @@ function rAporte(T){const el=document.getElementById('s-aporte');const M=S.confi
     const elig=ps.filter(p=>!p.acimaTeto);const fora=ps.filter(p=>p.acimaTeto);
     const valCls=Object.values(T.P).filter(p=>p.a.classe===cls).reduce((s,p)=>s+(p.valor||0),0)+valor;
     const d=distribuir(valor,elig.map(p=>({atual:p.valor||0,alvo:MC[p.a.ticker]*valCls,peso:MC[p.a.ticker]})));
-    let usado=0;const rows=elig.map((p,i)=>{if(d[i]<0.01)return '';const cri=cls==='cripto';const q=cri?d[i]/p.preco:Math.floor(d[i]/p.preco);const v=q*p.preco;usado+=v;
+    let usado=0;const rows=elig.map((p,i)=>{if(d[i]<0.01)return '';const cri=DOLAR(cls);const q=cri?d[i]/p.preco:Math.floor(d[i]/p.preco);const v=q*p.preco;usado+=v;
       return `<tr><td><b>${esc(p.a.ticker)}</b></td><td>${brlP(p.preco)}</td><td>${brl(d[i])}</td><td><b>${cri?nf(q,8):q}</b></td><td>${brl(v)}</td></tr>`}).join('');
     return `<div class="card" style="margin-top:12px"><h2>${CLASSES[cls].n} — ${brl(valor)}</h2><table><tr><th>Ativo</th><th>Preço</th><th>Valor ideal</th><th>Comprar (qtd)</th><th>Valor da compra</th></tr>${rows}
     <tr class="tot"><td>Sobra (cotas inteiras)</td><td></td><td></td><td></td><td>${brl(valor-usado)}</td></tr></table>${fora.length?`<div class="note">Fora por estar acima do teto: ${fora.map(p=>esc(p.a.ticker)).join(', ')}</div>`:''}</div>`};
-  html+=det('acoes',dC[1])+det('fii',dC[2])+det('cripto',dC[3]);
+  const iK=k=>ks.indexOf(k);html+=det('acoes',dC[iK('acoes')])+det('fii',dC[iK('fii')])+det('eua',dC[iK('eua')])+det('cripto',dC[iK('cripto')]);
   if(dC[0]>=0.01)html+=`<div class="card" style="margin-top:12px"><h2>Renda Fixa + Caixa — ${brl(dC[0])}</h2><div class="note">Aplicar em renda fixa (ex.: CDB) e depois atualizar o saldo na aba Renda fixa &amp; Caixa.</div></div>`;
   el.innerHTML=html;
   document.getElementById('fAp').onsubmit=e=>{e.preventDefault();ultimoAporte=numBR(new FormData(e.target).get('v'))||0;render()};
+}
+
+/* ---------- Analista ---------- */
+const GLOSS={
+ 'P/L':'Preço ÷ lucro por ação. Quantos anos de lucro atual "pagam" a ação. Menor = mais barata (mas pode ser barata por um motivo).',
+ 'P/VP':'Preço ÷ valor patrimonial por ação. Abaixo de 1 = negocia por menos que o patrimônio contábil. Em FIIs, P/VP < 1 = cota abaixo do valor dos imóveis/títulos.',
+ 'ROE':'Retorno sobre o patrimônio: lucro ÷ patrimônio líquido. Mede quão bem a empresa transforma o capital dos sócios em lucro. Acima de 12–15% é bom.',
+ 'ROIC':'Retorno sobre o capital investido (sócios + dívida). Mostra a eficiência do negócio independente de como é financiado.',
+ 'DY':'Dividend yield: proventos dos últimos 12 meses ÷ preço. Quanto a ação/FII pagou em relação ao que custa hoje.',
+ 'Dív.Líq/PL':'Dívida líquida ÷ patrimônio. Mede alavancagem; acima de 1 a empresa deve mais do que o patrimônio dos sócios. Não se aplica bem a bancos.',
+ 'Margem líquida':'Lucro líquido ÷ receita. Quanto sobra de cada R$ 1 vendido.',
+ 'Cresc. receita 5a':'Crescimento médio anual da receita nos últimos 5 anos.',
+ 'Graham':'Preço justo de Benjamin Graham: √(22,5 × LPA × VPA). Pensado para empresas estáveis; penaliza empresas de crescimento.',
+ 'Bazin':'Preço-teto de Décio Bazin: dividendos por ação ÷ DY desejado (6%). Só faz sentido para boas pagadoras.',
+ 'Margem de segurança':'Desconto exigido sobre o preço justo antes de comprar (aqui 15%), para compensar erros de estimativa.',
+ 'Vacância':'Percentual de área vaga dos imóveis de um FII de tijolo. Alta vacância = menos aluguel.',
+ 'Liquidez':'Volume médio negociado por dia. Pouca liquidez = difícil comprar/vender sem mexer no preço.',
+ 'NTN-B':'Título público atrelado ao IPCA (Tesouro IPCA+). Sua taxa real é a referência de "retorno sem risco" contra a qual FIIs e ações são comparados.',
+ 'Meta tática':'Meta da classe escolhida pelo analista dentro da faixa (mín.–máx.), conforme o mercado está caro ou barato.'};
+const tip=(t,k)=>`<span title="${esc(GLOSS[k||t]||'')}" style="border-bottom:1px dotted var(--muted);cursor:help">${t}</span>`;
+let scrAba='acoes',scrFiltro='aprovados',scrBusca='',scrSeg='';
+function ntnbReal(){const t=S.cache.tesouro||{};const c=Object.entries(t).find(([n])=>/IPCA\+ 20(3|4)\d$/.test(n));const m=c&&String(c[1].taxa).match(/([\d,]+)%/);return m?parseFloat(m[1].replace(',','.')):6.5}
+function screener(){const F=S.cache.fundamentos;if(!F)return null;const meus=new Set(S.ativos.map(a=>a.ticker));const dyA=(S.config.dyAlvo?.acoes||6)/100;const mg=0.15;
+  const acoes=Object.values(F.acoes||{}).filter(x=>(x['Liq.2meses']||0)>=1e6&&x['Cotação']>0).map(x=>{const p=x['Cotação'],pl=x['P/L'],pvp=x['P/VP'],dy=x['Div.Yield']||0,roe=x['ROE'],ml=x['Mrg. Líq.'],div=x['Dív.Líq/ Patrim.'],cr=x['Cresc. Rec.5a'];
+    const c={roe:roe!=null&&roe>=0.12,lucro:pl>0&&ml>0,divida:div==null||div<=1,cresc:cr==null||cr>=0};const q=Object.values(c).every(Boolean);
+    const lpa=pl>0?p/pl:null,vpa=pvp>0?p/pvp:null;const graham=lpa&&vpa?Math.sqrt(22.5*lpa*vpa):null;const bazin=dy>0?p*dy/dyA:null;
+    const vs=[graham,bazin].filter(v=>v>0);const justo=vs.length?vs.reduce((a,b)=>a+b,0)/vs.length:null;const teto=justo?justo*(1-mg):null;
+    return {t:x.Papel,p,pl,pvp,dy,roe,ml,div,cr,liq:x['Liq.2meses'],c,q,graham,bazin,teto,up:teto?teto/p-1:null,sinal:!q?'r':teto&&p<=teto?'g':'y',meu:meus.has(x.Papel)}});
+  const nt=ntnbReal()/100;const fiis=Object.values(F.fiis||{}).filter(x=>(x['Liquidez']||0)>=1e6&&x['Cotação']>0).map(x=>{const dy=x['Dividend Yield']||0,pvp=x['P/VP'],vac=x['Vacância Média'];
+    const c={pvp:pvp!=null&&pvp>0&&pvp<=1.05,dy:dy>=nt+0.02,vac:vac==null||vac<=0.10};const ok=Object.values(c).every(Boolean);
+    return {t:x.Papel,seg:x.Segmento||'—',p:x['Cotação'],dy,pvp,vac,liq:x['Liquidez'],c,q:ok,sinal:ok?'g':(c.dy&&c.vac)?'y':'r',meu:meus.has(x.Papel)}});
+  return {acoes,fiis,nt,data:F.atualizadoEm}}
+function rAnalista(T){const el=document.getElementById('s-analista');const A=S.cache.analise;const val=analiseValida();const M=metasAtuais();const F=S.config.faixas||FAIXAS0;
+  const SIN={verde:'🟢',amarelo:'🟡',vermelho:'🔴',g:'🟢',y:'🟡',r:'🔴'};
+  let h=`<div class="card"><h2>Relatório do analista</h2>${A?`<div class="sub">Último relatório: <b>${dbr(A.data)}</b>${val?'':' <span class="tag warn">mais de 45 dias — metas táticas ignoradas</span>'}${A.relatorioUrl?` · <a href="${esc(A.relatorioUrl)}" target="_blank" rel="noopener">abrir relatório completo</a>`:''}</div>${A.resumo?`<p>${esc(A.resumo)}</p>`:''}`:'<p class="muted">Ainda não há relatório. O primeiro sai da análise que vamos fazer juntos; depois, todo dia 7, antes do aporte do dia 10.</p>'}</div>`;
+  h+=`<div class="card" style="margin-top:12px"><h2>${tip('Meta tática')} por classe</h2><div class="tbl" style="border:none"><table><tr><th>Classe</th><th>Faixa</th><th>Neutro</th><th>Meta do mês</th><th>Atual</th><th class="l">Por quê</th></tr>
+    ${Object.entries(GRUPOS).map(([k,g])=>{const f=F[k]||{};const a=T.total?T.grp[k]/T.total:0;return `<tr><td><span class="dot" style="background:${g.c}"></span>${g.n}</td><td>${nf(f.min,0)}–${nf(f.max,0)}%</td><td>${nf(S.config.metas[k],0)}%</td><td><b>${nf(M[k],1)}%</b></td><td>${pct(a)}</td><td class="l" style="white-space:normal;min-width:260px">${esc(val?.justificativas?.[k]||'—')}</td></tr>`}).join('')}</table></div></div>`;
+  if(A?.aporte?.itens?.length)h+=`<div class="card" style="margin-top:12px"><h2>Aporte sugerido — ${brl(A.aporte.valor)}</h2><table><tr><th>Ativo</th><th>Valor</th><th class="l">Motivo</th></tr>${A.aporte.itens.map(x=>`<tr><td><b>${esc(x.ticker)}</b></td><td>${brl(x.valor)}</td><td class="l" style="white-space:normal">${esc(x.motivo||'')}</td></tr>`).join('')}</table></div>`;
+  if(A?.ativos&&Object.keys(A.ativos).length)h+=`<div class="card" style="margin-top:12px"><h2>Sinal por ativo</h2><div class="tbl" style="border:none"><table><tr><th>Ativo</th><th>Sinal</th><th>Teto sugerido</th><th class="l">Tese</th><th class="l">O que me faria estar errado</th></tr>${Object.entries(A.ativos).map(([t,x])=>`<tr><td><b>${esc(t)}</b></td><td>${SIN[x.sinal]||'—'}</td><td>${x.tetoSugerido?brl(x.tetoSugerido):'—'}</td><td class="l" style="white-space:normal;min-width:240px">${esc(x.tese||'')}</td><td class="l" style="white-space:normal;min-width:200px">${esc(x.contra||'')}</td></tr>`).join('')}</table></div></div>`;
+  if(A?.alertas?.length)h+=`<div class="card" style="margin-top:12px"><h2>Alertas</h2><ul>${A.alertas.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`;
+  // screener
+  const SC=screener();
+  h+=`<div class="card" style="margin-top:12px"><h2>Screener — quem passa nos filtros</h2>`;
+  if(!SC)h+='<p class="muted">Dados de fundamentos ainda não carregados.</p>';else{
+    const lista=scrAba==='acoes'?SC.acoes:SC.fiis;const segs=[...new Set(SC.fiis.map(x=>x.seg))].sort();
+    let L=lista.filter(x=>(scrFiltro==='todos'||(scrFiltro==='aprovados'&&x.q)||(scrFiltro==='carteira'&&x.meu))&&(!scrBusca||x.t.includes(scrBusca.toUpperCase()))&&(scrAba!=='fiis'||!scrSeg||x.seg===scrSeg));
+    L.sort((a,b)=>scrAba==='acoes'?((b.up??-9)-(a.up??-9)):(b.dy-a.dy));
+    const ck=v=>v?'<span class="pos">✓</span>':'<span class="neg">✗</span>';
+    h+=`<div class="row" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px"><span class="seg" id="scrAba"><button data-s="acoes" class="${scrAba==='acoes'?'on':''}">Ações (${SC.acoes.filter(x=>x.q).length}/${SC.acoes.length})</button><button data-s="fiis" class="${scrAba==='fiis'?'on':''}">FIIs (${SC.fiis.filter(x=>x.q).length}/${SC.fiis.length})</button></span>
+      <span class="seg" id="scrFil">${[['aprovados','Aprovados'],['carteira','Na carteira'],['todos','Todos']].map(([k,n])=>`<button data-f="${k}" class="${scrFiltro===k?'on':''}">${n}</button>`).join('')}</span>
+      <input id="scrBusca" placeholder="Buscar ticker" value="${esc(scrBusca)}" style="width:130px">${scrAba==='fiis'?`<select id="scrSeg"><option value="">Todos os segmentos</option>${segs.map(x=>`<option${x===scrSeg?' selected':''}>${esc(x)}</option>`).join('')}</select>`:''}
+      <span class="muted" style="font-size:12px">Fundamentus · ${dbr(String(SC.data).slice(0,10))} · liquidez ≥ R$ 1 mi/dia</span></div>`;
+    if(scrAba==='acoes')h+=`<div class="tbl cfgt"><table><tr><th>Ação</th><th>Sinal</th><th>Preço</th><th>${tip('P/L')}</th><th>${tip('P/VP')}</th><th>${tip('ROE')}</th><th>${tip('DY')}</th><th>${tip('Dív.Líq/PL')}</th><th>${tip('Cresc. 5a','Cresc. receita 5a')}</th><th title="${esc(GLOSS.ROE)}">ROE≥12%</th><th title="Lucro e margem positivos">Lucro</th><th title="${esc(GLOSS['Dív.Líq/PL'])}">Dívida</th><th title="Receita crescendo em 5 anos">Cresc.</th><th>${tip('Graham')}</th><th>${tip('Bazin')}</th><th>${tip('Teto (−15%)','Margem de segurança')}</th><th>Upside</th></tr>
+      ${L.slice(0,200).map(x=>`<tr><td><b>${esc(x.t)}</b>${x.meu?' <span class="tag">carteira</span>':''}</td><td>${SIN[x.sinal]}</td><td>${brlP(x.p)}</td><td>${nf(x.pl,1)}</td><td>${nf(x.pvp,2)}</td><td>${pct(x.roe)}</td><td>${pct(x.dy)}</td><td>${x.div==null?'—':nf(x.div,2)}</td><td>${pct(x.cr)}</td><td>${ck(x.c.roe)}</td><td>${ck(x.c.lucro)}</td><td>${ck(x.c.divida)}</td><td>${ck(x.c.cresc)}</td><td>${x.graham?brlP(x.graham):'—'}</td><td>${x.bazin?brlP(x.bazin):'—'}</td><td><b>${x.teto?brlP(x.teto):'—'}</b></td><td class="${sgn(x.up)}">${pct(x.up)}</td></tr>`).join('')||'<tr><td colspan="17" class="muted">Nenhuma ação neste filtro</td></tr>'}</table></div>
+      <div class="note">🟢 passa no filtro de qualidade e está abaixo do teto · 🟡 passa, mas acima do teto · 🔴 reprova em algum critério. Teto = média de Graham e Bazin com 15% de margem de segurança — é uma triagem, não uma recomendação: empresas de crescimento (como a WEG) quase nunca parecem baratas por esses métodos, e bancos não usam dívida/PL. A decisão passa pela análise do relatório. Passe o mouse nos títulos das colunas para ver o significado.</div>`;
+    else h+=`<div class="tbl cfgt"><table><tr><th>FII</th><th>Sinal</th><th class="l">Segmento</th><th>Preço</th><th>${tip('DY')}</th><th>${tip('P/VP')}</th><th>${tip('Vacância')}</th><th>${tip('Liquidez')}</th><th title="P/VP ≤ 1,05">P/VP</th><th title="DY ≥ NTN-B real + 2 p.p.">DY</th><th title="Vacância ≤ 10%">Vac.</th></tr>
+      ${L.slice(0,200).map(x=>`<tr><td><b>${esc(x.t)}</b>${x.meu?' <span class="tag">carteira</span>':''}</td><td>${SIN[x.sinal]}</td><td class="l">${esc(x.seg)}</td><td>${brlP(x.p)}</td><td>${pct(x.dy)}</td><td>${nf(x.pvp,2)}</td><td>${pct(x.vac)}</td><td>${PRIV?'•••':nf(x.liq/1e6,1)+' mi'}</td><td>${ck(x.c.pvp)}</td><td>${ck(x.c.dy)}</td><td>${ck(x.c.vac)}</td></tr>`).join('')||'<tr><td colspan="11" class="muted">Nenhum FII neste filtro</td></tr>'}</table></div>
+      <div class="note">Critérios: P/VP ≤ 1,05 · DY ≥ ${tip('NTN-B')} real (${nf(SC.nt*100,2)}%) + 2 p.p. · vacância ≤ 10%. A classificação de segmento é a do Fundamentus (alguns FIIs de logística aparecem como "Multicategoria" — o relatório do analista corrige isso).</div>`}
+  h+=`</div><div class="card" style="margin-top:12px"><h2>Glossário</h2><dl style="margin:0">${Object.entries({...GLOSS,...(A?.glossario||{})}).map(([k,v])=>`<dt style="font-weight:600;margin-top:8px">${esc(k)}</dt><dd style="margin:2px 0 0 0;color:var(--muted)">${esc(v)}</dd>`).join('')}</dl></div>`;
+  el.innerHTML=h;
+  el.querySelector('#scrAba')?.addEventListener('click',e=>{const k=e.target.dataset.s;if(k){scrAba=k;render()}});
+  el.querySelector('#scrFil')?.addEventListener('click',e=>{const k=e.target.dataset.f;if(k){scrFiltro=k;render()}});
+  el.querySelector('#scrBusca')?.addEventListener('change',e=>{scrBusca=e.target.value.trim();render()});
+  el.querySelector('#scrSeg')?.addEventListener('change',e=>{scrSeg=e.target.value;render()});
 }
 
 /* ---------- Evolução ---------- */
@@ -621,23 +697,25 @@ function rEvol(T){const H=S.historico;const el=document.getElementById('s-evol')
   el.innerHTML=`<div class="card chart"><h2>Evolução do patrimônio <span class="muted" style="font-weight:400">· ${dbr(first.data)} → ${dbr(last.data)}: <span class="${sgn(last.total-first.total)}">${brl(last.total-first.total)} (${pct(last.total/first.total-1)})</span> (inclui aportes)</span></h2>
   <svg viewBox="0 0 ${W} ${Hh}">${g}${lbl}<path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>${H.map((h,i)=>`<circle cx="${X(xs[i])}" cy="${Y(h.total)}" r="3" fill="var(--accent)"><title>${dbr(h.data)}: ${brl(h.total)}</title></circle>`).join('')}</svg></div>`+tabHist(H);
 }
-function tabHist(H){return `<div class="tbl" style="margin-top:12px"><table><tr><th>Data</th><th>Total</th><th>Renda Fixa</th><th>Caixa</th><th>Ações</th><th>FIIs</th><th>Cripto</th></tr>
-  ${[...H].reverse().map(h=>`<tr><td>${dbr(h.data)}</td><td><b>${brl(h.total)}</b></td><td>${brl(h.rf)}</td><td>${brl(h.caixa)}</td><td>${brl(h.acoes)}</td><td>${brl(h.fii)}</td><td>${brl(h.cripto)}</td></tr>`).join('')}</table></div>`}
+function tabHist(H){return `<div class="tbl" style="margin-top:12px"><table><tr><th>Data</th><th>Total</th><th>Renda Fixa</th><th>Caixa</th><th>Ações</th><th>FIIs</th><th>EUA</th><th>Cripto</th></tr>
+  ${[...H].reverse().map(h=>`<tr><td>${dbr(h.data)}</td><td><b>${brl(h.total)}</b></td><td>${brl(h.rf)}</td><td>${brl(h.caixa)}</td><td>${brl(h.acoes)}</td><td>${brl(h.fii)}</td><td>${brl(h.eua||0)}</td><td>${brl(h.cripto)}</td></tr>`).join('')}</table></div>`}
 
 /* ---------- Configurações ---------- */
 let cfgAba='metas';
-function subnav(){return `<nav class="tabs" id="cfgTabs" style="margin-bottom:12px">${[['metas','Metas da carteira'],['acoes','Ações'],['fii','FIIs'],['cripto','Cripto'],['conexao','Conexão & backup']].map(([k,n])=>`<button data-c="${k}" class="${cfgAba===k?'on':''}">${n}</button>`).join('')}</nav>`}
+function subnav(){return `<nav class="tabs" id="cfgTabs" style="margin-bottom:12px">${[['metas','Metas da carteira'],['acoes','Ações'],['fii','FIIs'],['eua','EUA'],['cripto','Cripto'],['conexao','Conexão & backup']].map(([k,n])=>`<button data-c="${k}" class="${cfgAba===k?'on':''}">${n}</button>`).join('')}</nav>`}
 function selConv(a){return `<select data-f="conviccao" title="${CONV_TXT[+a.conviccao||0]}" style="width:108px;letter-spacing:1px">${CONV_TXT.map((t,i)=>`<option value="${i}"${+a.conviccao===i?' selected':''}>${i?'★'.repeat(i)+'☆'.repeat(5-i):'— fora'}</option>`).join('')}</select>`}
-function cfgMetas(T){const M=S.config.metas;const soma=Object.values(M).reduce((a,b)=>a+ +b,0);
-  return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0">Meta de cada classe</h2>
-    <span class="tag ${Math.abs(soma-100)<0.01?'pos':'neg'}" id="somaTag" style="font-size:13px;padding:3px 10px">Soma: ${nf(soma,1)}% ${Math.abs(soma-100)<0.01?'✓':'— precisa fechar 100%'}</span></div>
-    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));margin-top:12px">
-    ${Object.entries(GRUPOS).map(([k,g])=>{const a=T.total?T.grp[k]/T.total:0;return `<div class="card" style="background:var(--soft)">
+function cfgMetas(T){const F=S.config.faixas||FAIXAS0;const M=S.config.metas;const soma=Object.keys(GRUPOS).reduce((a,k)=>a+(+M[k]||0),0);const an=analiseValida();const MT=metasAtuais();
+  const inp=(k,c,v)=>`<input data-fx="${k}" data-c="${c}" type="text" inputmode="decimal" data-num value="${v}" style="width:${c==='neutro'?70:58}px;${c==='neutro'?'font-size:18px;font-weight:700':''}">`;
+  return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0">Faixa de cada classe</h2>
+    <span class="tag ${Math.abs(soma-100)<0.01?'pos':'neg'}" id="somaTag" style="font-size:13px;padding:3px 10px">Soma dos neutros: ${nf(soma,1)}% ${Math.abs(soma-100)<0.01?'✓':'— precisa fechar 100%'}</span></div>
+    <div class="note" style="margin-top:6px">Cada classe tem um <b>mínimo</b>, um <b>neutro</b> e um <b>máximo</b>. O analista define todo mês a <b>meta tática</b> dentro da faixa (mais renda fixa quando nada está barato, mais bolsa quando está) — é ela que o aporte segue. Sem relatório recente, vale o neutro.</div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(230px,1fr));margin-top:12px">
+    ${Object.entries(GRUPOS).map(([k,g])=>{const a=T.total?T.grp[k]/T.total:0;const f=F[k]||{min:0,neutro:M[k]||0,max:100};const mt=(MT[k]||0)/100;return `<div class="card" style="background:var(--soft)">
       <div style="display:flex;align-items:center;gap:8px"><span class="dot" style="background:${g.c}"></span><b>${g.n}</b></div>
-      <div style="display:flex;align-items:baseline;gap:6px;margin:10px 0 6px"><input data-meta="${k}" type="text" inputmode="decimal" data-num step="0.5" min="0" max="100" value="${M[k]}" style="width:90px;font-size:22px;font-weight:700"><span style="font-size:18px">%</span></div>
-      <div class="sub">Alvo: <b>${brl((M[k]||0)/100*T.total)}</b> · Atual: ${pct(a)} (${brl(T.grp[k])})</div>
-      <div style="margin-top:8px">${barra(a,(M[k]||0)/100,g.c)}</div></div>`}).join('')}</div>
-    <div class="btns" style="margin-top:12px"><button class="primary" id="bMetas"${Math.abs(soma-100)<0.01?'':' disabled'}>Salvar metas</button></div></div>
+      <div style="display:flex;align-items:flex-end;gap:6px;margin:10px 0 6px"><label>Mín.${inp(k,'min',f.min)}</label><label>Neutro${inp(k,'neutro',M[k]??f.neutro)}</label><label>Máx.${inp(k,'max',f.max)}</label><span style="padding-bottom:6px">%</span></div>
+      <div class="sub">Meta ${an?'tática do analista':'(neutro)'}: <b>${pct(mt)}</b> → ${brl(mt*T.total)}<br>Atual: <b>${pct(a)}</b> (${brl(T.grp[k])})${a<f.min/100?' <span class="tag warn">abaixo da faixa</span>':a>f.max/100?' <span class="tag warn">acima da faixa</span>':''}</div>
+      <div style="margin-top:8px">${barra(a,mt,g.c)}</div></div>`}).join('')}</div>
+    <div class="btns" style="margin-top:12px"><button class="primary" id="bMetas"${Math.abs(soma-100)<0.01?'':' disabled'}>Salvar faixas</button></div></div>
   <div class="card" style="margin-top:12px"><h2>Regras</h2><form class="row" id="fRegras">
     <label>Alerta de desvio da meta (p.p.)<input name="alerta" type="text" inputmode="decimal" data-num step="0.5" value="${S.config.alerta}" style="width:110px"></label>
     <label>Máx. por ação (% da classe)<input name="capA" type="text" inputmode="decimal" data-num step="1" value="${S.config.tetoMax.acoes}" style="width:110px"></label>
@@ -668,21 +746,23 @@ function cfgClasse(T,cls){const MC=metaClasse(cls);const L=S.ativos.filter(a=>a.
   <div class="card"><h2>Adicionar ${fii?'FII':'ação'}</h2><form class="row fAdd" data-cls="${cls}"><label>Ticker<input name="ticker" required style="width:100px" placeholder="${fii?'HGLG11':'PETR4'}"></label><label>Nome<input name="nome" style="width:160px"></label>
   <label>Convicção<select name="conv">${CONV_TXT.map((t,i)=>`<option value="${i}"${i===3?' selected':''}>${t}</option>`).join('')}</select></label><button class="primary">Adicionar</button></form>
   <div class="note">O ticker é conferido na brapi antes de salvar. Depois lance a compra na aba Lançamentos.</div></div></div>`}
-function cfgCripto(T){const L=S.ativos.filter(a=>a.classe==='cripto');const soma=L.reduce((s,a)=>s+(+a.peso||0),0);const tot=L.reduce((s,a)=>s+(T.P[a.ticker]?.valor||0),0);
-  return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h2 style="margin:0">Cripto — meta de cada moeda</h2><span class="tag ${Math.abs(soma-100)<0.01?'pos':'neg'}" style="font-size:13px;padding:3px 10px">Soma: ${nf(soma,1)}% ${Math.abs(soma-100)<0.01?'✓':'— precisa fechar 100%'}</span></div>
-  <div class="tbl" style="border:none;margin-top:10px"><table><tr><th>Moeda</th><th>Meta (%)</th><th>Atual</th><th>Falta p/ meta</th><th>Preço (US$)</th><th class="l">ID CoinGecko</th><th></th></tr>
-  ${L.map(a=>{const at=tot?(T.P[a.ticker]?.valor||0)/tot:0;return `<tr data-id="${a.id}"><td><b>${esc(a.ticker)}</b> <span class="muted">${esc(a.nome)}</span></td><td><input data-f="peso" type="text" inputmode="decimal" data-num step="0.5" value="${a.peso}" style="width:80px"></td><td>${pct(at)}</td><td class="${sgn(a.peso/100-at)}">${pct(a.peso/100-at)}</td><td>${usd(S.cache.quotes[a.ticker]?.p)}</td><td class="l"><input class="w" data-f="cgId" value="${esc(a.cgId)}" style="width:200px;font-size:12px"></td><td><button class="small danger" data-del="${a.id}">✕</button></td></tr>`}).join('')}</table></div>
-  <h3>Adicionar moeda</h3><form class="row fAdd" data-cls="cripto"><label>Ticker<input name="ticker" required style="width:90px" placeholder="LINK"></label><label>Nome<input name="nome" style="width:150px"></label><label>ID CoinGecko<input name="cgId" required style="width:180px" placeholder="chainlink"></label><label>Meta (%)<input name="peso" type="text" inputmode="decimal" data-num step="0.5" value="0" style="width:80px"></label><button class="primary">Adicionar</button></form>
-  <div class="note">O ID do CoinGecko é o final do endereço da moeda no site (coingecko.com/pt/moedas/<b>chainlink</b>). É conferido antes de salvar.</div></div>`}
+function cfgCripto(T,cls){const eua=cls==='eua';const L=S.ativos.filter(a=>a.classe===cls);const soma=L.reduce((s,a)=>s+(+a.peso||0),0);const tot=L.reduce((s,a)=>s+(T.P[a.ticker]?.valor||0),0);
+  return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h2 style="margin:0">${eua?'EUA (ETF) — meta de cada ETF':'Cripto — meta de cada moeda'}</h2>${L.length?`<span class="tag ${Math.abs(soma-100)<0.01?'pos':'neg'}" style="font-size:13px;padding:3px 10px">Soma: ${nf(soma,1)}% ${Math.abs(soma-100)<0.01?'✓':'— precisa fechar 100%'}</span>`:''}</div>
+  ${L.length?`<div class="tbl" style="border:none;margin-top:10px"><table><tr><th>${eua?'ETF':'Moeda'}</th><th>Meta (%)</th><th>Atual</th><th>Falta p/ meta</th><th>Preço (US$)</th>${eua?'':'<th class="l">ID CoinGecko</th>'}<th></th></tr>
+  ${L.map(a=>{const at=tot?(T.P[a.ticker]?.valor||0)/tot:0;return `<tr data-id="${a.id}"><td><b>${esc(a.ticker)}</b> <span class="muted">${esc(a.nome)}</span></td><td><input data-f="peso" type="text" inputmode="decimal" data-num step="0.5" value="${a.peso}" style="width:80px"></td><td>${pct(at)}</td><td class="${sgn(a.peso/100-at)}">${pct(a.peso/100-at)}</td><td>${usd(S.cache.quotes[a.ticker]?.p)}</td>${eua?'':`<td class="l"><input class="w" data-f="cgId" value="${esc(a.cgId)}" style="width:200px;font-size:12px"></td>`}<td><button class="small danger" data-del="${a.id}">✕</button></td></tr>`}).join('')}</table></div>`:`<p class="muted">Nenhum ${eua?'ETF':'ativo'} cadastrado ainda.</p>`}
+  <h3>Adicionar ${eua?'ETF':'moeda'}</h3><form class="row fAdd" data-cls="${cls}"><label>Ticker<input name="ticker" required style="width:90px" placeholder="${eua?'VOO':'LINK'}"></label><label>Nome<input name="nome" style="width:150px"></label>${eua?'':'<label>ID CoinGecko<input name="cgId" required style="width:180px" placeholder="chainlink"></label>'}<label>Meta (%)<input name="peso" type="text" inputmode="decimal" data-num step="0.5" value="0" style="width:80px"></label><button class="primary">Adicionar</button></form>
+  <div class="note">${eua?'ETF negociado nos EUA (conta global). A cotação vem do robô diário do seu GitHub (fechamento do dia anterior, em dólar) — depois de cadastrar, ela aparece a partir da próxima rodada do robô (~19h). Nos lançamentos, informe o preço em reais (valor pago convertido).':'O ID do CoinGecko é o final do endereço da moeda no site (coingecko.com/pt/moedas/<b>chainlink</b>). É conferido antes de salvar.'}</div></div>`}
 function cfgConexao(){return `<div class="card"><h2>Conexão, cotações e backup</h2><div class="note" style="margin:0 0 8px">Dados em <b>github.com/${esc(GH?.owner)}/${esc(GH?.repo)}</b> (arquivo ${ARQ}). Cada alteração vira uma versão no histórico do repositório. <button class="small" id="bDesc">Desconectar este aparelho</button></div><form class="row" id="fTok"><label>Chave brapi.dev<input name="t" value="${esc(S.config.brapiToken)}" style="width:230px"></label><button>Salvar</button></form>
     <div class="note">Último backup: ${S.config.ultimoBackup?dbr(S.config.ultimoBackup):'nunca'}. O Excel é uma cópia extra, independente do GitHub — salve no Drive de vez em quando.</div>
     <div class="btns" style="margin-top:8px"><button onclick="exportar()">⬇ Exportar Excel</button><button onclick="document.getElementById('fImport').click()">⬆ Importar Excel</button><button class="danger" id="bReset">Restaurar dados iniciais</button></div></div>`}
 function rCfg(T){const el=document.getElementById('s-cfg');
-  el.innerHTML=subnav()+({metas:()=>cfgMetas(T),acoes:()=>cfgClasse(T,'acoes'),fii:()=>cfgClasse(T,'fii'),cripto:()=>cfgCripto(T),conexao:cfgConexao})[cfgAba]();
+  el.innerHTML=subnav()+({metas:()=>cfgMetas(T),acoes:()=>cfgClasse(T,'acoes'),fii:()=>cfgClasse(T,'fii'),eua:()=>cfgCripto(T,'eua'),cripto:()=>cfgCripto(T,'cripto'),conexao:cfgConexao})[cfgAba]();
   el.querySelector('#cfgTabs').onclick=e=>{const c=e.target.dataset.c;if(c){cfgAba=c;render()}};
   // metas
-  el.querySelectorAll('[data-meta]').forEach(inp=>inp.oninput=()=>{const soma=[...el.querySelectorAll('[data-meta]')].reduce((s,i)=>s+(numBR(i.value)||0),0);const ok=Math.abs(soma-100)<0.01;const t=el.querySelector('#somaTag');t.className='tag '+(ok?'pos':'neg');t.textContent=`Soma: ${nf(soma,1)}% ${ok?'✓':'— precisa fechar 100%'}`;el.querySelector('#bMetas').disabled=!ok});
-  el.querySelector('#bMetas')?.addEventListener('click',()=>{el.querySelectorAll('[data-meta]').forEach(i=>S.config.metas[i.dataset.meta]=numBR(i.value)||0);save();toast('Metas salvas');render()});
+  el.querySelectorAll('[data-fx][data-c="neutro"]').forEach(inp=>inp.oninput=()=>{const soma=[...el.querySelectorAll('[data-fx][data-c="neutro"]')].reduce((s,i)=>s+(numBR(i.value)||0),0);const ok=Math.abs(soma-100)<0.01;const t=el.querySelector('#somaTag');t.className='tag '+(ok?'pos':'neg');t.textContent=`Soma dos neutros: ${nf(soma,1)}% ${ok?'✓':'— precisa fechar 100%'}`;el.querySelector('#bMetas').disabled=!ok});
+  el.querySelector('#bMetas')?.addEventListener('click',()=>{const F={};el.querySelectorAll('[data-fx]').forEach(i=>{F[i.dataset.fx]=F[i.dataset.fx]||{};F[i.dataset.fx][i.dataset.c]=numBR(i.value)||0});
+    const ruim=Object.entries(F).filter(([k,f])=>!(f.min<=f.neutro&&f.neutro<=f.max));if(ruim.length){toast('Confira: o neutro precisa ficar entre o mínimo e o máximo ('+ruim.map(([k])=>GRUPOS[k].n).join(', ')+')');return}
+    S.config.faixas=F;Object.entries(F).forEach(([k,f])=>S.config.metas[k]=f.neutro);save();toast('Faixas salvas');render()});
   el.querySelector('#fRegras')?.addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.target);S.config.alerta=numBR(f.get('alerta'))||5;S.config.tetoMax={acoes:numBR(f.get('capA'))||100,fii:numBR(f.get('capF'))||100};S.config.dyAlvo={acoes:numBR(f.get('dyA'))||0,fii:numBR(f.get('dyF'))||0};save();toast('Regras salvas');render()});
   // edição de ativos
   el.querySelectorAll('tr[data-id] [data-f]').forEach(inp=>inp.onchange=()=>{const a=S.ativos.find(x=>x.id===inp.closest('tr').dataset.id);const f=inp.dataset.f;
@@ -718,7 +798,7 @@ function exportar(){if(!window.XLSX){toast('Biblioteca do Excel não carregou (s
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(pick(S.proventos,SHEETS.Proventos),{header:SHEETS.Proventos}),'Proventos');
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(pick(S.rendaFixa,SHEETS.RendaFixa),{header:SHEETS.RendaFixa}),'RendaFixa');
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(pick(S.historico,SHEETS.Historico),{header:SHEETS.Historico}),'Historico');
-  const cfg=[...Object.entries(S.config.metas).map(([k,v])=>({chave:'meta_'+k,valor:v})),{chave:'alerta',valor:S.config.alerta},{chave:'brapiToken',valor:S.config.brapiToken},{chave:'inicio',valor:S.config.inicio},{chave:'tetoMax_acoes',valor:S.config.tetoMax?.acoes},{chave:'tetoMax_fii',valor:S.config.tetoMax?.fii},{chave:'dyAlvo_acoes',valor:S.config.dyAlvo?.acoes},{chave:'dyAlvo_fii',valor:S.config.dyAlvo?.fii}];
+  const cfg=[...Object.entries(S.config.metas).map(([k,v])=>({chave:'meta_'+k,valor:v})),{chave:'alerta',valor:S.config.alerta},{chave:'brapiToken',valor:S.config.brapiToken},{chave:'inicio',valor:S.config.inicio},...Object.entries(S.config.faixas||{}).flatMap(([k,f])=>[{chave:'faixa_'+k+'_min',valor:f.min},{chave:'faixa_'+k+'_max',valor:f.max}]),{chave:'tetoMax_acoes',valor:S.config.tetoMax?.acoes},{chave:'tetoMax_fii',valor:S.config.tetoMax?.fii},{chave:'dyAlvo_acoes',valor:S.config.dyAlvo?.acoes},{chave:'dyAlvo_fii',valor:S.config.dyAlvo?.fii}];
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(cfg),'Config');
   XLSX.writeFile(wb,`Backup_Investimentos_${HOJE()}.xlsx`);
   S.config.ultimoBackup=HOJE();save();renderBanner();toast('Backup exportado — salve no seu Drive');
@@ -736,7 +816,7 @@ async function importar(file){if(!window.XLSX){toast('Biblioteca do Excel não c
     N.proventos=rd('Proventos').map(r=>({id:uid(),data:ds(r.data),ticker:String(r.ticker).trim(),tipo:r.tipo,valor:+r.valor}));
     N.rendaFixa=rd('RendaFixa').map(r=>({id:uid(),nome:r.nome,grupo:r.grupo,indexador:r.indexador,titulo:r.titulo||'',taxa:+r.taxa||0,valorBase:+r.valorBase||0,dataBase:r.dataBase?ds(r.dataBase):'',vencimento:r.vencimento?ds(r.vencimento):'',qtdTitulos:r.qtdTitulos===''?null:+r.qtdTitulos,obs:r.obs}));
     N.historico=rd('Historico').map(r=>({data:ds(r.data),total:+r.total,rf:+r.rf,caixa:+r.caixa,acoes:+r.acoes,fii:+r.fii,cripto:+r.cripto}));
-    rd('Config').forEach(r=>{const k=String(r.chave);if(k.startsWith('meta_'))N.config.metas[k.slice(5)]=+r.valor;else if(k==='alerta')N.config.alerta=+r.valor;else if(k==='brapiToken')N.config.brapiToken=String(r.valor);else if(k==='inicio')N.config.inicio=ds(r.valor);else if(/^(tetoMax|dyAlvo)_/.test(k)){const [g,c]=k.split('_');N.config[g]=N.config[g]||{};N.config[g][c]=+r.valor}});migrar(N);
+    rd('Config').forEach(r=>{const k=String(r.chave);if(k.startsWith('meta_'))N.config.metas[k.slice(5)]=+r.valor;else if(k==='alerta')N.config.alerta=+r.valor;else if(k==='brapiToken')N.config.brapiToken=String(r.valor);else if(k==='inicio')N.config.inicio=ds(r.valor);else if(/^faixa_/.test(k)){const [,g,c]=k.split('_');N.config.faixas=N.config.faixas||{};N.config.faixas[g]=N.config.faixas[g]||{};N.config.faixas[g][c]=+r.valor}else if(/^(tetoMax|dyAlvo)_/.test(k)){const [g,c]=k.split('_');N.config[g]=N.config[g]||{};N.config[g][c]=+r.valor}});migrar(N);
     if(!await confirmar(`Substituir os dados atuais pelo backup? (${N.ativos.length} ativos, ${N.lancamentos.length} lançamentos, ${N.proventos.length} proventos)`))return;
     S=N;S.cache={quotes:{},usd:null,cdi:[],ipca:[]};save();toast('Backup importado');atualizar();
   }catch(e){toast('Erro ao importar: '+e.message)}
@@ -770,8 +850,9 @@ async function iniciar(){
   if(!d){S=migrar(seed());S.cache=cache;setSave('Arquivo de dados não existia — criado com os dados iniciais');await gravar()}
   else{S=migrar({...d,cache});setSave('Dados carregados ✓','pos')}
   carregadoEm=Date.now();
+  for(const [arq,ch] of [['analise.json','analise'],['fundamentos.json','fundamentos']]){try{const r=await fetch(ghURL().replace(ARQ,arq),{headers:{...ghHdr(),Accept:'application/vnd.github.raw+json'},cache:'no-store'});if(r.ok)S.cache[ch]=JSON.parse(await r.text())}catch(e){}}
   try{const r=await fetch(ghURL().replace(ARQ,'precos_ref.json'),{headers:ghHdr(),cache:'no-store'});if(r.ok)S.cache.precosRef=JSON.parse(b64dec((await r.json()).content))}catch(e){}
-  try{const r=await fetch(ghURL().replace(ARQ,'proventos_b3.json'),{headers:ghHdr(),cache:'no-store'});if(r.ok){S.cache.provB3=JSON.parse(b64dec((await r.json()).content));LS(KEY+'_cache',S.cache)}}catch(e){}
+  try{const r=await fetch(ghURL().replace(ARQ,'proventos_b3.json'),{headers:ghHdr(),cache:'no-store'});if(r.ok){S.cache.provB3=JSON.parse(b64dec((await r.json()).content));LS(KEY+'_cache',cacheLeve())}}catch(e){}
   aplicarEventos();render();atualizar();
 }
 iniciar();
