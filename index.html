@@ -9,7 +9,7 @@
 :root{
   --bg:#f6f5f2;--card:#ffffff;--fg:#1d1c1a;--muted:#6f6b64;--line:#e4e1da;--soft:#f0eee9;
   --accent:#1f5f8b;--accent-soft:#e3eef6;--pos:#1d7a46;--neg:#b23a32;--warn:#a86a00;--warn-soft:#fff4dc;
-  --c-rf:#4a7fa8;--c-caixa:#8fb3cf;--c-acoes:#c26b3a;--c-fii:#8a6bb3;--c-cripto:#d9a400;--c-eua:#3f9a8c;
+  --c-rf:#4a7fa8;--c-caixa:#8fb3cf;--c-acoes:#c26b3a;--c-fii:#8a6bb3;--c-cripto:#d9a400;--c-eua:#3f9a8c;--c-prev:#7a8b3c;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#161615;--card:#201f1d;--fg:#ecebe7;--muted:#a19d95;--line:#33312e;--soft:#2a2926;
@@ -133,7 +133,7 @@ h3{font-size:13px;margin:16px 0 8px;color:var(--muted);text-transform:uppercase;
 /* ================= ESTADO ================= */
 const KEY='painelInvest_v1';
 const HOJE=()=>new Date().toISOString().slice(0,10);
-const CLASSES={rf:{n:'Renda Fixa',c:'var(--c-rf)'},caixa:{n:'Caixa & Recebíveis',c:'var(--c-caixa)'},acoes:{n:'Ações',c:'var(--c-acoes)'},fii:{n:'FIIs',c:'var(--c-fii)'},eua:{n:'EUA (ETF)',c:'var(--c-eua)'},cripto:{n:'Cripto',c:'var(--c-cripto)'}};
+const CLASSES={rf:{n:'Renda Fixa',c:'var(--c-rf)'},caixa:{n:'Caixa & Recebíveis',c:'var(--c-caixa)'},acoes:{n:'Ações',c:'var(--c-acoes)'},fii:{n:'FIIs',c:'var(--c-fii)'},eua:{n:'EUA (ETF)',c:'var(--c-eua)'},cripto:{n:'Cripto',c:'var(--c-cripto)'},prev:{n:'Previdência',c:'var(--c-prev)'}};
 // Grupos de meta: Renda Fixa + Caixa compartilham a mesma meta
 const GRUPOS={rfc:{n:'Renda Fixa + Caixa',cls:['rf','caixa'],c:'var(--c-rf)'},acoes:{n:'Ações',cls:['acoes'],c:'var(--c-acoes)'},fii:{n:'FIIs',cls:['fii'],c:'var(--c-fii)'},eua:{n:'EUA (ETF)',cls:['eua'],c:'var(--c-eua)'},cripto:{n:'Cripto',cls:['cripto'],c:'var(--c-cripto)'}};
 const DOLAR=c=>c==='cripto'||c==='eua'; // classes cotadas em dólar
@@ -385,13 +385,20 @@ function aplicarEventos(){const ev=S.cache.provB3?.bonificacoes||[];const d0=pro
 /* ---------- Metas táticas (vindas do analista) ---------- */
 function analiseValida(){const a=S.cache.analise;return a&&a.metasTaticas&&a.data&&diasEntre(a.data,HOJE())<=45?a:null}
 function metasAtuais(){const a=analiseValida();const M={...S.config.metas};if(a)Object.keys(M).forEach(k=>{if(a.metasTaticas[k]!=null)M[k]=+a.metasTaticas[k]});return M}
+/* ---------- Previdência (PGBL): fora das faixas táticas ---------- */
+function prevCalc(pl){const f=S.cache.prev?.fundos?.[pl.cnpj];const serie=f?.serie||[];const ult=f?.ultima;
+  const cotaEm=d=>{for(const [dt,c] of serie)if(dt>=d)return c;return null};let cotas=0,semCota=0,aplic=0;
+  (pl.aportes||[]).forEach(a=>{aplic+=+a.valor||0;const c=cotaEm(a.data);if(c)cotas+=a.valor/c;else semCota+=+a.valor||0});
+  const saldo=ult?cotas*ult.cota+semCota:aplic;return {aplic,cotas,saldo,ult,semCota,rend:saldo-aplic}}
+function prevAno(ano){return (S.previdencia||[]).filter(p=>p.tipo==='PGBL').flatMap(p=>p.aportes||[]).filter(a=>a.data.startsWith(String(ano))).reduce((s,a)=>s+(+a.valor||0),0)}
 function totais(){
-  const P=posicoes();const cls={rf:0,caixa:0,acoes:0,fii:0,eua:0,cripto:0};let varDia=0,falta=0;
+  const P=posicoes();const cls={rf:0,caixa:0,acoes:0,fii:0,eua:0,cripto:0,prev:0};let varDia=0,falta=0;
   Object.values(P).forEach(p=>{if(p.valor!=null){cls[p.a.classe]+=p.valor;varDia+=p.varDia}else if(p.qtd>0)falta++});
   S.rendaFixa.forEach(r=>{const v=valorRF(r);if(!isNaN(v))cls[r.grupo]+=v});
-  const total=Object.values(cls).reduce((a,b)=>a+b,0);
+  (S.previdencia||[]).forEach(pl=>cls.prev+=prevCalc(pl).saldo);
+  const total=Object.values(cls).reduce((a,b)=>a+b,0);const totalAloc=total-cls.prev; // base das faixas: sem a previdência
   const grp={};Object.entries(GRUPOS).forEach(([k,g])=>grp[k]=g.cls.reduce((s,c)=>s+cls[c],0));
-  return {P,cls,grp,total,varDia,falta};
+  return {P,cls,grp,total,totalAloc,varDia,falta};
 }
 function snapshot(){const T=totais();if(T.falta||!T.total)return;const d=HOJE();const reg={data:d,total:+T.total.toFixed(2),...Object.fromEntries(Object.entries(T.cls).map(([k,v])=>[k,+v.toFixed(2)]))};
   const i=S.historico.findIndex(h=>h.data===d);const novo=i<0;if(!novo&&Date.now()-(S.snapAt||0)<3600e3)return false;
@@ -422,6 +429,7 @@ function renderSinal(){const el=document.getElementById('sinal');if(!el||!S)retu
   if(S.rendaFixa.some(r=>r.indexador==='TESOURO')){const d=Object.values(C.tesouro||{})[0]?.data;const age=d?Date.now()-Date.parse(d):1e12;it.push([age<4*864e5?'ok':age<8*864e5?'at':'er',`Tesouro · ${d?hm(Date.parse(d)):'—'}`,'Preço de resgate do Tesouro Direto (atualiza uma vez por dia útil).'])}
   const ultCDI=(Array.isArray(C.cdi)&&C.cdi.length)?C.cdi[C.cdi.length-1].data:null;const ultIPCA=(Array.isArray(C.ipca)&&C.ipca.length)?C.ipca[C.ipca.length-1].data.slice(3):null;
   it.push(['ne',`CDI ${ultCDI?ultCDI.slice(0,5):'—'} · IPCA ${ultIPCA||'—'}`,'Banco Central: último CDI diário e último IPCA mensal divulgados (meses ainda não divulgados usam o último IPCA).'])
+  if((S.previdencia||[]).length){const d=Object.values(C.prev?.fundos||{})[0]?.ultima?.data;const age=d?Date.now()-Date.parse(d):1e12;it.push([age<5*864e5?'ok':age<10*864e5?'at':'er',`Previdência · cota ${d?dbr(d).slice(0,5):'—'}`,'Cota oficial do fundo na CVM (sai com 1–2 dias úteis de atraso).'])}
   const rb=C.provB3?.atualizadoEm;const ageR=rb?Date.now()-Date.parse(rb):1e12;it.push([ageR<36*3600e3?'ok':ageR<80*3600e3?'at':'er',`Robô B3 · ${rb?hm(Date.parse(rb)):'—'}`,'Robô diário no seu GitHub: proventos, bonificações e preços de referência (mês/ano/12 meses).'])
   it.push([conflito?'er':'ok',`Dados · ${salvoEm?'salvo '+hm(salvoEm):'carregado '+hm(carregadoEm)}`,`Seus lançamentos no GitHub. Carregados às ${hm(carregadoEm)}${salvoEm?', último salvamento às '+hm(salvoEm):''}.`])
   el.innerHTML=it.map(([c,t,tt])=>`<span title="${esc(tt)}"><i class="${c}"></i>${esc(t)}</span>`).join('')}
@@ -437,10 +445,10 @@ function confirmarTaxas(){S.rendaFixa.forEach(r=>{if(/confirmar/i.test(r.obs))r.
 function barra(atual,meta,cor){const max=Math.max(atual,meta,0.0001)*1.15;return `<div class="bar"><i style="width:${Math.min(100,atual/max*100)}%;background:${cor}"></i><b style="left:${Math.min(100,meta/max*100)}%" title="Meta"></b></div>`}
 
 function rGeral(T){const el=document.getElementById('s-geral');const M=metasAtuais();const al=S.config.alerta/100;
-  let rows='';Object.entries(GRUPOS).forEach(([k,g])=>{const v=T.grp[k];const a=T.total?v/T.total:0;const m=(M[k]||0)/100;const d=a-m;
+  let rows='';Object.entries(GRUPOS).forEach(([k,g])=>{const v=T.grp[k];const a=T.totalAloc?v/T.totalAloc:0;const m=(M[k]||0)/100;const d=a-m;
     const status=Math.abs(d)>al?`<span class="tag warn">${d>0?'acima':'abaixo'} da meta</span>`:'<span class="tag">dentro</span>';
     rows+=`<tr><td><span class="dot" style="background:${g.c}"></span>${g.n}</td><td>${brl(v)}</td><td>${pct(a)}</td><td>${pct(m,0)}</td><td class="${Math.abs(d)>al?'warn':''}">${d>0?'+':''}${pct(d)}</td><td>${barra(a,m,g.c)}</td><td>${status}</td></tr>`;
-    if(k==='rfc')g.cls.forEach(c=>rows+=`<tr><td class="muted" style="padding-left:28px">${CLASSES[c].n}</td><td class="muted">${brl(T.cls[c])}</td><td class="muted">${pct(T.total?T.cls[c]/T.total:0)}</td><td></td><td></td><td></td><td></td></tr>`);
+    if(k==='rfc')g.cls.forEach(c=>rows+=`<tr><td class="muted" style="padding-left:28px">${CLASSES[c].n}</td><td class="muted">${brl(T.cls[c])}</td><td class="muted">${pct(T.totalAloc?T.cls[c]/T.totalAloc:0)}</td><td></td><td></td><td></td><td></td></tr>`);
   });
   const Ps=Object.values(T.P).filter(p=>p.qtd>0&&p.chg!=null).sort((a,b)=>b.chg-a.chg);
   const mv=arr=>arr.map(p=>`<tr><td>${p.a.ticker}</td><td class="${sgn(p.chg)}">${pct(p.chg,2)}</td><td class="${sgn(p.varDia)}">${brl(p.varDia)}</td></tr>`).join('');
@@ -455,7 +463,8 @@ function rGeral(T){const el=document.getElementById('s-geral');const M=metasAtua
   </div>
   <div class="card" style="margin-top:12px"><h2>Alocação por classe — atual × meta</h2><div class="tbl" style="border:none"><table>
     <tr><th>Classe</th><th>Valor</th><th>Atual</th><th>Meta</th><th>Desvio</th><th class="l">Atual (barra) × meta (traço)</th><th class="l">Status</th></tr>${rows}
-    <tr class="tot"><td>Total</td><td>${brl(T.total)}</td><td>100%</td><td>${pct(Object.values(M).reduce((a,b)=>a+ +b,0)/100,0)}</td><td></td><td></td><td></td></tr></table></div>
+    <tr class="tot"><td>Total das faixas</td><td>${brl(T.totalAloc)}</td><td>100%</td><td>${pct(Object.values(M).reduce((a,b)=>a+ +b,0)/100,0)}</td><td></td><td></td><td></td></tr>
+    ${T.cls.prev?`<tr><td><span class="dot" style="background:var(--c-prev)"></span>Previdência <span class="muted">(fora das faixas)</span></td><td>${brl(T.cls.prev)}</td><td class="muted" colspan="5">${pct(T.cls.prev/T.total)} do patrimônio total · longo prazo, não entra no aporte mensal</td></tr>`:''}</table></div>
     <div class="note">Alerta quando o desvio passa de ±${S.config.alerta} pontos percentuais. Caixa & Recebíveis conta dentro da meta de Renda Fixa.</div></div>
   <div class="split" style="margin-top:12px">
     <div class="card"><h2>Maiores altas ${perLabel()}</h2><table>${mv(Ps.slice(0,5))||'<tr><td class="muted">Sem cotações</td></tr>'}</table></div>
@@ -495,6 +504,17 @@ function cardTesouro(){const L=S.rendaFixa.filter(r=>r.indexador==='TESOURO');if
   return `<div class="card" style="margin-top:12px"><h2>Tesouro Direto — marcação a mercado</h2><div class="tbl" style="border:none"><table>
   <tr><th>Título</th><th>Qtd</th><th>Aplicado</th><th>Sua taxa</th><th>Taxa de mercado hoje</th><th>Sua taxa − mercado</th><th>Preço de resgate (PU)</th><th>Valor se vender hoje</th><th>Ganho bruto se vender</th><th>Valor na curva</th><th>Mercado − curva</th></tr>${rows}</table></div>
   <div class="note">Preço de resgate do site do Tesouro Direto${dt?` (atualizado em ${new Date(dt).toLocaleString('pt-BR')})`:''}. <b>Sua taxa − mercado</b> positiva = a taxa de mercado caiu abaixo da sua e o título valorizou; quanto maior, melhor o momento para vender. <b>Mercado − curva</b> positivo = vender hoje rende mais do que o título "deveria" render até aqui. Ganho bruto: antes do IR (regressivo: 15% após 2 anos) e da taxa da B3. Valor na curva só aparece com a data da compra preenchida.</div></div>`}
+function cardPrev(){const L=S.previdencia||[];const ano=new Date().getFullYear();const teto=+S.config.pgblTeto||0;const feito=prevAno(ano);
+  const falta=Math.max(0,teto-feito);const dias=diasEntre(HOJE(),ano+'-12-31');
+  return `<div class="card" style="margin-top:12px"><h2>Previdência privada</h2>
+  ${teto?`<div style="margin-bottom:12px"><div class="sub">PGBL ${ano}: <b>${brl(feito)}</b> de ${brl(teto)} (12% da renda bruta tributável) · ${falta>0?`<b class="warn">faltam ${brl(falta)}</b> até 31/12 (${dias} dias)`:'<b class="pos">teto atingido ✓</b>'}</div><div style="margin-top:6px">${barra(teto?feito/teto:0,1,'var(--c-prev)')}</div></div>`:''}
+  ${L.map(pl=>{const c=prevCalc(pl);return `<div class="tbl" style="border:none"><table><tr><th>Plano</th><th>Tipo</th><th class="l">Tabela de IR</th><th>Aplicado</th><th>Cotas</th><th>Cota (data)</th><th>Saldo bruto</th><th>Rendimento</th></tr>
+    <tr data-pid="${pl.id}"><td><b>${esc(pl.nome)}</b><div class="muted" style="font-size:12px">CNPJ ${esc(pl.cnpj)}</div></td><td>${esc(pl.tipo)}</td>
+    <td class="l"><select data-pf="tabela"><option value="progressiva"${pl.tabela==='progressiva'?' selected':''}>Progressiva</option><option value="regressiva"${pl.tabela==='regressiva'?' selected':''}>Regressiva</option></select>${pl.tabela!=='regressiva'?'<div class="warn" style="font-size:11px">não chega a 10%</div>':''}</td>
+    <td>${brl(c.aplic)}</td><td>${mq(nf(c.cotas,4))}</td><td>${c.ult?`${nf(c.ult.cota,6)}<div class="muted" style="font-size:11px">${dbr(c.ult.data)}</div>`:'—'}</td><td><b>${brl(c.saldo)}</b></td><td class="${sgn(c.rend)}">${brl(c.rend)} <span class="muted">${pct(c.aplic?c.rend/c.aplic:0,2)}</span></td></tr></table></div>
+    <h3>Aportes</h3><table style="max-width:520px">${(pl.aportes||[]).slice().sort((a,b)=>b.data.localeCompare(a.data)).map(a=>`<tr><td>${dbr(a.data)}</td><td>${brl(+a.valor)}</td><td><button class="small danger" data-pdel="${pl.id}|${a.data}|${a.valor}">✕</button></td></tr>`).join('')}</table>
+    <form class="row fPrev" data-pid="${pl.id}" style="margin-top:8px"><label>Data<input type="date" name="data" value="${HOJE()}"></label><label>Valor (R$)<input name="valor" type="text" inputmode="decimal" data-num data-dec="2" style="width:120px"></label><button class="primary">+ Aporte</button></form>${c.semCota?`<div class="note warn">${brl(c.semCota)} ainda sem cota da CVM (aporte recente) — contado pelo valor aplicado até a cota sair.</div>`:''}`}).join('<hr>')||'<p class="muted">Nenhum plano cadastrado.</p>'}
+  <div class="note">O saldo usa a cota diária oficial do fundo (CVM, publicada com 1–2 dias úteis de atraso; atualiza todo dia pelo robô). Cotas de cada aporte = valor ÷ cota do dia do aporte. Pode haver diferença pequena para o app por conta da data de conversão da cota. A previdência fica fora das faixas táticas: entra no patrimônio, mas não no cálculo do aporte mensal.<br>Teto do PGBL: <input id="pgblTeto" type="text" inputmode="decimal" data-num data-dec="2" value="${teto}" style="width:110px"> (12% da renda bruta tributável do ano — confira no informe de rendimentos).</div></div>`}
 function rRF(T){let tr='';S.rendaFixa.forEach(r=>{const v=valorRF(r);
   tr+=`<tr data-id="${r.id}"><td><input class="w" data-f="nome" value="${esc(r.nome)}"></td>
   <td><select data-f="grupo"><option value="rf"${r.grupo==='rf'?' selected':''}>Renda Fixa</option><option value="caixa"${r.grupo==='caixa'?' selected':''}>Caixa & Receb.</option></select></td>
@@ -509,7 +529,7 @@ function rRF(T){let tr='';S.rendaFixa.forEach(r=>{const v=valorRF(r);
   document.getElementById('s-rf').innerHTML=`<div class="card"><h2>Renda fixa &amp; Caixa</h2><div class="tbl" style="border:none"><table>
   <tr><th>Nome</th><th class="l">Grupo</th><th class="l">Indexador</th><th>Taxa</th><th>Valor aplicado / saldo</th><th class="l">Data da aplicação / saldo</th><th class="l">Vencimento / Título</th><th>Qtd títulos</th><th>Valor atual</th><th>Rendimento</th><th class="l">Obs.</th><th></th></tr>${tr}
   <tr class="tot"><td>Total</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td>${brl(T.cls.rf+T.cls.caixa)}</td><td></td><td></td><td></td></tr></table></div>
-  <div class="btns" style="margin-top:10px"><button id="addRF">+ Adicionar item</button></div>${cardTesouro()}
+  <div class="btns" style="margin-top:10px"><button id="addRF">+ Adicionar item</button></div>${cardTesouro()}${cardPrev()}
   <div class="note">As alterações nesta tabela salvam sozinhas ao sair do campo (Tab, Enter ou clique fora) — o status no topo mostra "Salvo ✓".<br><b>CDI</b>: taxa em % do CDI, corrige pelo CDI diário do Banco Central desde a data base. <b>IPCA</b>: taxa real (IPCA + x% a.a.); corrige pelo IPCA mensal do Banco Central (pro rata nos meses parciais; meses ainda não divulgados usam o último IPCA) + a taxa pro rata. É o valor <b>na curva</b> (o que o título rende até o vencimento) — a corretora mostra a <b>marcação a mercado</b>, que oscila com os juros e pode ficar acima ou abaixo.<br>Para títulos, o melhor é lançar o <b>valor aplicado</b> e a <b>data da compra</b>: o painel calcula tudo dali em diante. Comprou o mesmo título em datas diferentes? Lance uma linha por compra. <b>TESOURO</b>: título do Tesouro Direto — o valor atual é a quantidade × preço de resgate do dia (marcação a mercado); escolha o título na coluna Vencimento / Título. <b>MANUAL</b>: valor fixo que você atualiza. <b>USD</b>: valor base em dólares, convertido pelo dólar do dia.<br>Para atualizar um saldo pelo extrato, troque o valor base e coloque a data do extrato.</div></div>`;
   const s=document.getElementById('s-rf');
   s.querySelectorAll('tr[data-id] [data-f]').forEach(inp=>inp.onchange=async()=>{const r=S.rendaFixa.find(x=>x.id===inp.closest('tr').dataset.id);const f=inp.dataset.f;
@@ -517,6 +537,11 @@ function rRF(T){let tr='';S.rendaFixa.forEach(r=>{const v=valorRF(r);
     if(f==='indexador'||(f==='dataBase'&&r.dataBase<HOJE())){save();await atualizar();return}save();render()});
   s.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{if(await confirmar('Remover este item?')){S.rendaFixa=S.rendaFixa.filter(x=>x.id!==b.dataset.del);save();render()}});
   document.getElementById('addRF').onclick=()=>{S.rendaFixa.push({id:uid(),nome:'Novo item',grupo:'rf',indexador:'MANUAL',taxa:0,valorBase:0,dataBase:HOJE(),obs:''});save();render()};
+  s.querySelectorAll('.fPrev').forEach(f=>f.onsubmit=e=>{e.preventDefault();const pl=S.previdencia.find(x=>x.id===f.dataset.pid);const d=new FormData(f);const v=numBR(d.get('valor'));if(!(v>0)){toast('Informe o valor');return}
+    pl.aportes.push({data:d.get('data'),valor:v});save();toast('Aporte registrado');render()});
+  s.querySelectorAll('[data-pdel]').forEach(b=>b.onclick=async()=>{const [id,dt,v]=b.dataset.pdel.split('|');if(!await confirmar(`Excluir o aporte de ${dbr(dt)}?`))return;const pl=S.previdencia.find(x=>x.id===id);const i=pl.aportes.findIndex(a=>a.data===dt&&String(a.valor)===v);if(i>=0)pl.aportes.splice(i,1);save();render()});
+  s.querySelectorAll('[data-pf]').forEach(sel=>sel.onchange=()=>{const pl=S.previdencia.find(x=>x.id===sel.closest('tr').dataset.pid);pl[sel.dataset.pf]=sel.value;save();toast('Salvo');render()});
+  document.getElementById('pgblTeto')?.addEventListener('change',e=>{S.config.pgblTeto=numBR(e.target.value)||0;save();render()});
 }
 
 function optsAtivos(sel){return S.ativos.map(a=>`<option value="${esc(a.ticker)}"${a.ticker===sel?' selected':''}>${esc(a.ticker)} — ${esc(a.nome)}</option>`).join('')}
@@ -600,7 +625,7 @@ function distribuir(valor,itens){ // itens: {k,atual,alvo} -> aloca só em quem 
   const resto=valor-sg;const sa=itens.reduce((s,i)=>s+i.peso,0)||1;return gaps.map((g,k)=>g+resto*itens[k].peso/sa);
 }
 function rAporte(T){const el=document.getElementById('s-aporte');const M=metasAtuais();const A=ultimoAporte;
-  const ks=Object.keys(GRUPOS);const novoTotal=T.total+A;
+  const ks=Object.keys(GRUPOS);const novoTotal=T.totalAloc+A;
   const dC=distribuir(A,ks.map(k=>({k,atual:T.grp[k],alvo:(M[k]||0)/100*novoTotal,peso:+M[k]||0})));
   let html=`<div class="card"><h2>Calculadora de aporte</h2><form class="row" id="fAp"><label>Valor do aporte (R$)<input name="v" type="text" inputmode="decimal" data-num data-dec="2" step="any" value="${A}" style="width:160px"></label><button class="primary">Calcular</button></form>
   <div class="note">Só compra, nunca vende: o dinheiro vai para as classes abaixo da meta, proporcional ao quanto falta. Dentro da classe, mesma lógica pela meta de cada ativo (convicção). Ações/FIIs acima do preço-teto ficam de fora.</div></div>
@@ -654,7 +679,7 @@ function rAnalista(T){const el=document.getElementById('s-analista');const A=S.c
   const SIN={verde:'🟢',amarelo:'🟡',vermelho:'🔴',g:'🟢',y:'🟡',r:'🔴'};
   let h=`<div class="card"><h2>Relatório do analista</h2>${A?`<div class="sub">Último relatório: <b>${dbr(A.data)}</b>${val?'':' <span class="tag warn">mais de 45 dias — metas táticas ignoradas</span>'}${A.relatorioUrl?` · <a href="${esc(A.relatorioUrl)}" target="_blank" rel="noopener">abrir relatório completo</a>`:''}</div>${A.resumo?`<p>${esc(A.resumo)}</p>`:''}`:'<p class="muted">Ainda não há relatório. O primeiro sai da análise que vamos fazer juntos; depois, todo dia 7, antes do aporte do dia 10.</p>'}</div>`;
   h+=`<div class="card" style="margin-top:12px"><h2>${tip('Meta tática')} por classe</h2><div class="tbl" style="border:none"><table><tr><th>Classe</th><th>Faixa</th><th>Neutro</th><th>Meta do mês</th><th>Atual</th><th class="l">Por quê</th></tr>
-    ${Object.entries(GRUPOS).map(([k,g])=>{const f=F[k]||{};const a=T.total?T.grp[k]/T.total:0;return `<tr><td><span class="dot" style="background:${g.c}"></span>${g.n}</td><td>${nf(f.min,0)}–${nf(f.max,0)}%</td><td>${nf(S.config.metas[k],0)}%</td><td><b>${nf(M[k],1)}%</b></td><td>${pct(a)}</td><td class="l" style="white-space:normal;min-width:260px">${esc(val?.justificativas?.[k]||'—')}</td></tr>`}).join('')}</table></div></div>`;
+    ${Object.entries(GRUPOS).map(([k,g])=>{const f=F[k]||{};const a=T.totalAloc?T.grp[k]/T.totalAloc:0;return `<tr><td><span class="dot" style="background:${g.c}"></span>${g.n}</td><td>${nf(f.min,0)}–${nf(f.max,0)}%</td><td>${nf(S.config.metas[k],0)}%</td><td><b>${nf(M[k],1)}%</b></td><td>${pct(a)}</td><td class="l" style="white-space:normal;min-width:260px">${esc(val?.justificativas?.[k]||'—')}</td></tr>`}).join('')}</table></div></div>`;
   if(A?.aporte?.itens?.length)h+=`<div class="card" style="margin-top:12px"><h2>Aporte sugerido — ${brl(A.aporte.valor)}</h2><table><tr><th>Ativo</th><th>Valor</th><th class="l">Motivo</th></tr>${A.aporte.itens.map(x=>`<tr><td><b>${esc(x.ticker)}</b></td><td>${brl(x.valor)}</td><td class="l" style="white-space:normal">${esc(x.motivo||'')}</td></tr>`).join('')}</table></div>`;
   if(A?.ativos&&Object.keys(A.ativos).length)h+=`<div class="card" style="margin-top:12px"><h2>Sinal por ativo</h2><div class="tbl" style="border:none"><table><tr><th>Ativo</th><th>Sinal</th><th>Teto sugerido</th><th class="l">Tese</th><th class="l">O que me faria estar errado</th></tr>${Object.entries(A.ativos).map(([t,x])=>`<tr><td><b>${esc(t)}</b></td><td>${SIN[x.sinal]||'—'}</td><td>${x.tetoSugerido?brl(x.tetoSugerido):'—'}</td><td class="l" style="white-space:normal;min-width:240px">${esc(x.tese||'')}</td><td class="l" style="white-space:normal;min-width:200px">${esc(x.contra||'')}</td></tr>`).join('')}</table></div></div>`;
   if(A?.alertas?.length)h+=`<div class="card" style="margin-top:12px"><h2>Alertas</h2><ul>${A.alertas.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`;
@@ -697,8 +722,8 @@ function rEvol(T){const H=S.historico;const el=document.getElementById('s-evol')
   el.innerHTML=`<div class="card chart"><h2>Evolução do patrimônio <span class="muted" style="font-weight:400">· ${dbr(first.data)} → ${dbr(last.data)}: <span class="${sgn(last.total-first.total)}">${brl(last.total-first.total)} (${pct(last.total/first.total-1)})</span> (inclui aportes)</span></h2>
   <svg viewBox="0 0 ${W} ${Hh}">${g}${lbl}<path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>${H.map((h,i)=>`<circle cx="${X(xs[i])}" cy="${Y(h.total)}" r="3" fill="var(--accent)"><title>${dbr(h.data)}: ${brl(h.total)}</title></circle>`).join('')}</svg></div>`+tabHist(H);
 }
-function tabHist(H){return `<div class="tbl" style="margin-top:12px"><table><tr><th>Data</th><th>Total</th><th>Renda Fixa</th><th>Caixa</th><th>Ações</th><th>FIIs</th><th>EUA</th><th>Cripto</th></tr>
-  ${[...H].reverse().map(h=>`<tr><td>${dbr(h.data)}</td><td><b>${brl(h.total)}</b></td><td>${brl(h.rf)}</td><td>${brl(h.caixa)}</td><td>${brl(h.acoes)}</td><td>${brl(h.fii)}</td><td>${brl(h.eua||0)}</td><td>${brl(h.cripto)}</td></tr>`).join('')}</table></div>`}
+function tabHist(H){return `<div class="tbl" style="margin-top:12px"><table><tr><th>Data</th><th>Total</th><th>Renda Fixa</th><th>Caixa</th><th>Ações</th><th>FIIs</th><th>EUA</th><th>Cripto</th><th>Previdência</th></tr>
+  ${[...H].reverse().map(h=>`<tr><td>${dbr(h.data)}</td><td><b>${brl(h.total)}</b></td><td>${brl(h.rf)}</td><td>${brl(h.caixa)}</td><td>${brl(h.acoes)}</td><td>${brl(h.fii)}</td><td>${brl(h.eua||0)}</td><td>${brl(h.cripto)}</td><td>${brl(h.prev||0)}</td></tr>`).join('')}</table></div>`}
 
 /* ---------- Configurações ---------- */
 let cfgAba='metas';
@@ -710,10 +735,10 @@ function cfgMetas(T){const F=S.config.faixas||FAIXAS0;const M=S.config.metas;con
     <span class="tag ${Math.abs(soma-100)<0.01?'pos':'neg'}" id="somaTag" style="font-size:13px;padding:3px 10px">Soma dos neutros: ${nf(soma,1)}% ${Math.abs(soma-100)<0.01?'✓':'— precisa fechar 100%'}</span></div>
     <div class="note" style="margin-top:6px">Cada classe tem um <b>mínimo</b>, um <b>neutro</b> e um <b>máximo</b>. O analista define todo mês a <b>meta tática</b> dentro da faixa (mais renda fixa quando nada está barato, mais bolsa quando está) — é ela que o aporte segue. Sem relatório recente, vale o neutro.</div>
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(230px,1fr));margin-top:12px">
-    ${Object.entries(GRUPOS).map(([k,g])=>{const a=T.total?T.grp[k]/T.total:0;const f=F[k]||{min:0,neutro:M[k]||0,max:100};const mt=(MT[k]||0)/100;return `<div class="card" style="background:var(--soft)">
+    ${Object.entries(GRUPOS).map(([k,g])=>{const a=T.totalAloc?T.grp[k]/T.totalAloc:0;const f=F[k]||{min:0,neutro:M[k]||0,max:100};const mt=(MT[k]||0)/100;return `<div class="card" style="background:var(--soft)">
       <div style="display:flex;align-items:center;gap:8px"><span class="dot" style="background:${g.c}"></span><b>${g.n}</b></div>
       <div style="display:flex;align-items:flex-end;gap:6px;margin:10px 0 6px"><label>Mín.${inp(k,'min',f.min)}</label><label>Neutro${inp(k,'neutro',M[k]??f.neutro)}</label><label>Máx.${inp(k,'max',f.max)}</label><span style="padding-bottom:6px">%</span></div>
-      <div class="sub">Meta ${an?'tática do analista':'(neutro)'}: <b>${pct(mt)}</b> → ${brl(mt*T.total)}<br>Atual: <b>${pct(a)}</b> (${brl(T.grp[k])})${a<f.min/100?' <span class="tag warn">abaixo da faixa</span>':a>f.max/100?' <span class="tag warn">acima da faixa</span>':''}</div>
+      <div class="sub">Meta ${an?'tática do analista':'(neutro)'}: <b>${pct(mt)}</b> → ${brl(mt*T.totalAloc)}<br>Atual: <b>${pct(a)}</b> (${brl(T.grp[k])})${a<f.min/100?' <span class="tag warn">abaixo da faixa</span>':a>f.max/100?' <span class="tag warn">acima da faixa</span>':''}</div>
       <div style="margin-top:8px">${barra(a,mt,g.c)}</div></div>`}).join('')}</div>
     <div class="btns" style="margin-top:12px"><button class="primary" id="bMetas"${Math.abs(soma-100)<0.01?'':' disabled'}>Salvar faixas</button></div></div>
   <div class="card" style="margin-top:12px"><h2>Regras</h2><form class="row" id="fRegras">
@@ -785,7 +810,7 @@ const SHEETS={Ativos:['ticker','nome','classe','conviccao','peso','setor','teto'
   Lancamentos:['data','ticker','tipo','qtd','preco','custos','obs','inicial'],
   Proventos:['data','ticker','tipo','valor'],
   RendaFixa:['nome','grupo','indexador','titulo','taxa','valorBase','dataBase','vencimento','qtdTitulos','obs'],
-  Historico:['data','total','rf','caixa','acoes','fii','cripto']};
+  Historico:['data','total','rf','caixa','acoes','fii','eua','cripto','prev']};
 function exportar(){if(!window.XLSX){toast('Biblioteca do Excel não carregou (sem internet?)');return}
   const wb=XLSX.utils.book_new();const T=totais();
   // aba de posição (só leitura, para consulta)
@@ -798,6 +823,7 @@ function exportar(){if(!window.XLSX){toast('Biblioteca do Excel não carregou (s
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(pick(S.proventos,SHEETS.Proventos),{header:SHEETS.Proventos}),'Proventos');
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(pick(S.rendaFixa,SHEETS.RendaFixa),{header:SHEETS.RendaFixa}),'RendaFixa');
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(pick(S.historico,SHEETS.Historico),{header:SHEETS.Historico}),'Historico');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet((S.previdencia||[]).flatMap(pl=>(pl.aportes||[]).map(a=>({plano:pl.nome,cnpj:pl.cnpj,tipo:pl.tipo,tabela:pl.tabela,data:a.data,valor:a.valor})))),'Previdencia');
   const cfg=[...Object.entries(S.config.metas).map(([k,v])=>({chave:'meta_'+k,valor:v})),{chave:'alerta',valor:S.config.alerta},{chave:'brapiToken',valor:S.config.brapiToken},{chave:'inicio',valor:S.config.inicio},...Object.entries(S.config.faixas||{}).flatMap(([k,f])=>[{chave:'faixa_'+k+'_min',valor:f.min},{chave:'faixa_'+k+'_max',valor:f.max}]),{chave:'tetoMax_acoes',valor:S.config.tetoMax?.acoes},{chave:'tetoMax_fii',valor:S.config.tetoMax?.fii},{chave:'dyAlvo_acoes',valor:S.config.dyAlvo?.acoes},{chave:'dyAlvo_fii',valor:S.config.dyAlvo?.fii}];
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(cfg),'Config');
   XLSX.writeFile(wb,`Backup_Investimentos_${HOJE()}.xlsx`);
@@ -815,7 +841,8 @@ async function importar(file){if(!window.XLSX){toast('Biblioteca do Excel não c
     N.lancamentos=rd('Lancamentos').map(r=>({id:uid(),data:ds(r.data),ticker:String(r.ticker).trim(),tipo:r.tipo,qtd:+r.qtd,preco:num(r.preco),custos:+r.custos||0,obs:r.obs,inicial:r.inicial==='sim'}));
     N.proventos=rd('Proventos').map(r=>({id:uid(),data:ds(r.data),ticker:String(r.ticker).trim(),tipo:r.tipo,valor:+r.valor}));
     N.rendaFixa=rd('RendaFixa').map(r=>({id:uid(),nome:r.nome,grupo:r.grupo,indexador:r.indexador,titulo:r.titulo||'',taxa:+r.taxa||0,valorBase:+r.valorBase||0,dataBase:r.dataBase?ds(r.dataBase):'',vencimento:r.vencimento?ds(r.vencimento):'',qtdTitulos:r.qtdTitulos===''?null:+r.qtdTitulos,obs:r.obs}));
-    N.historico=rd('Historico').map(r=>({data:ds(r.data),total:+r.total,rf:+r.rf,caixa:+r.caixa,acoes:+r.acoes,fii:+r.fii,cripto:+r.cripto}));
+    N.historico=rd('Historico').map(r=>({data:ds(r.data),total:+r.total,rf:+r.rf,caixa:+r.caixa,acoes:+r.acoes,fii:+r.fii,eua:+r.eua||0,cripto:+r.cripto,prev:+r.prev||0}));
+    if(wb.Sheets.Previdencia){const pv={};rd('Previdencia').forEach(r=>{const k=String(r.cnpj);pv[k]=pv[k]||{id:uid(),nome:r.plano,cnpj:k,tipo:r.tipo,tabela:r.tabela,aportes:[]};pv[k].aportes.push({data:ds(r.data),valor:+r.valor})});N.previdencia=Object.values(pv)}
     rd('Config').forEach(r=>{const k=String(r.chave);if(k.startsWith('meta_'))N.config.metas[k.slice(5)]=+r.valor;else if(k==='alerta')N.config.alerta=+r.valor;else if(k==='brapiToken')N.config.brapiToken=String(r.valor);else if(k==='inicio')N.config.inicio=ds(r.valor);else if(/^faixa_/.test(k)){const [,g,c]=k.split('_');N.config.faixas=N.config.faixas||{};N.config.faixas[g]=N.config.faixas[g]||{};N.config.faixas[g][c]=+r.valor}else if(/^(tetoMax|dyAlvo)_/.test(k)){const [g,c]=k.split('_');N.config[g]=N.config[g]||{};N.config[g][c]=+r.valor}});migrar(N);
     if(!await confirmar(`Substituir os dados atuais pelo backup? (${N.ativos.length} ativos, ${N.lancamentos.length} lançamentos, ${N.proventos.length} proventos)`))return;
     S=N;S.cache={quotes:{},usd:null,cdi:[],ipca:[]};save();toast('Backup importado');atualizar();
@@ -850,7 +877,7 @@ async function iniciar(){
   if(!d){S=migrar(seed());S.cache=cache;setSave('Arquivo de dados não existia — criado com os dados iniciais');await gravar()}
   else{S=migrar({...d,cache});setSave('Dados carregados ✓','pos')}
   carregadoEm=Date.now();
-  for(const [arq,ch] of [['analise.json','analise'],['fundamentos.json','fundamentos']]){try{const r=await fetch(ghURL().replace(ARQ,arq),{headers:{...ghHdr(),Accept:'application/vnd.github.raw+json'},cache:'no-store'});if(r.ok)S.cache[ch]=JSON.parse(await r.text())}catch(e){}}
+  for(const [arq,ch] of [['analise.json','analise'],['fundamentos.json','fundamentos'],['previdencia.json','prev']]){try{const r=await fetch(ghURL().replace(ARQ,arq),{headers:{...ghHdr(),Accept:'application/vnd.github.raw+json'},cache:'no-store'});if(r.ok)S.cache[ch]=JSON.parse(await r.text())}catch(e){}}
   try{const r=await fetch(ghURL().replace(ARQ,'precos_ref.json'),{headers:ghHdr(),cache:'no-store'});if(r.ok)S.cache.precosRef=JSON.parse(b64dec((await r.json()).content))}catch(e){}
   try{const r=await fetch(ghURL().replace(ARQ,'proventos_b3.json'),{headers:ghHdr(),cache:'no-store'});if(r.ok){S.cache.provB3=JSON.parse(b64dec((await r.json()).content));LS(KEY+'_cache',cacheLeve())}}catch(e){}
   aplicarEventos();render();atualizar();
