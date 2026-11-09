@@ -135,9 +135,10 @@ const KEY='painelInvest_v1';
 const HOJE=()=>new Date().toISOString().slice(0,10);
 const CLASSES={rf:{n:'Renda Fixa',c:'var(--c-rf)'},caixa:{n:'Caixa & Recebíveis',c:'var(--c-caixa)'},acoes:{n:'Ações',c:'var(--c-acoes)'},fii:{n:'FIIs',c:'var(--c-fii)'},eua:{n:'EUA (ETF)',c:'var(--c-eua)'},cripto:{n:'Cripto',c:'var(--c-cripto)'},prev:{n:'Previdência',c:'var(--c-prev)'}};
 // Grupos de meta: Renda Fixa + Caixa compartilham a mesma meta
-const GRUPOS={rfc:{n:'Renda Fixa + Caixa',cls:['rf','caixa'],c:'var(--c-rf)'},acoes:{n:'Ações',cls:['acoes'],c:'var(--c-acoes)'},fii:{n:'FIIs',cls:['fii'],c:'var(--c-fii)'},eua:{n:'EUA (ETF)',cls:['eua'],c:'var(--c-eua)'},cripto:{n:'Cripto',cls:['cripto'],c:'var(--c-cripto)'}};
+const GRUPOS={rfc:{n:'Renda Fixa + Caixa',cls:['rf','caixa'],c:'var(--c-rf)'},acoes:{n:'Ações',cls:['acoes'],c:'var(--c-acoes)'},fii:{n:'FIIs',cls:['fii'],c:'var(--c-fii)'},eua:{n:'EUA (ETF)',cls:['eua'],c:'var(--c-eua)'},prev:{n:'Previdência (PGBL)',cls:['prev'],c:'var(--c-prev)'}};
+// Modelo 2 (09/11/2026): as faixas valem para a CARTEIRA DE ATIVOS REAIS (tudo menos cripto, com o PGBL dentro). Cripto (+ USDC/USDT) é uma carteira à parte, que só se mexe por gatilhos de ciclo.
 const DOLAR=c=>c==='cripto'||c==='eua'; // classes cotadas em dólar
-const FAIXAS0={rfc:{min:10,neutro:15,max:30},acoes:{min:5,neutro:10,max:20},fii:{min:5,neutro:10,max:15},eua:{min:0,neutro:5,max:10},cripto:{min:55,neutro:60,max:65}};
+const FAIXAS0={rfc:{min:25,neutro:35,max:50},acoes:{min:15,neutro:25,max:35},fii:{min:10,neutro:20,max:25},eua:{min:0,neutro:10,max:20},prev:{min:0,neutro:10,max:20}};
 
 function uid(){return Math.random().toString(36).slice(2,10)}
 function seed(){
@@ -332,7 +333,7 @@ function autoProventos(){const ev=S.cache.provB3?.eventos||[];const d0=provDesde
   return out}
 /* ---------- Metas e preço-teto ---------- */
 const CONV_TXT=['Fora da meta','Muito baixa','Baixa','Média','Alta','Muito alta'];
-function migrar(D){D.config=D.config||{};if(!D.config.faixas){D.config.faixas=JSON.parse(JSON.stringify(FAIXAS0));D.config.metas=Object.fromEntries(Object.entries(FAIXAS0).map(([k,v])=>[k,v.neutro]))}D.config.tetoMax=D.config.tetoMax||{acoes:15,fii:30};D.config.dyAlvo=D.config.dyAlvo||{acoes:6,fii:9};
+function migrar(D){D.config=D.config||{};if(D.config.modelo!==2){D.config.faixas=JSON.parse(JSON.stringify(FAIXAS0));D.config.metas=Object.fromEntries(Object.entries(FAIXAS0).map(([k,v])=>[k,v.neutro]));D.config.modelo=2}if(!D.config.faixas){D.config.faixas=JSON.parse(JSON.stringify(FAIXAS0));D.config.metas=Object.fromEntries(Object.entries(FAIXAS0).map(([k,v])=>[k,v.neutro]))}D.config.tetoMax=D.config.tetoMax||{acoes:15,fii:30};D.config.dyAlvo=D.config.dyAlvo||{acoes:6,fii:9};
   const q={};(D.lancamentos||[]).forEach(l=>q[l.ticker]=(q[l.ticker]||0)+(l.tipo==='V'?-1:1)*l.qtd);
   (D.ativos||[]).forEach(a=>{if((a.classe==='acoes'||a.classe==='fii')&&a.conviccao==null){const w=+a.peso||0;a.conviccao=!(q[a.ticker]>0)&&w<=1?0:w>=10?5:w>=7?4:w>=5?3:w>=2?2:w>0?1:0}
     if((a.classe==='acoes'||a.classe==='fii')&&a.teto==null){a.teto=+a.tetoJairo||+a.tetoSuno||+a.tetoInter||0;a.tetoOrigem=a.teto?'manual':'';a.tetoRevisao=null}
@@ -383,9 +384,9 @@ function aplicarEventos(){const ev=S.cache.provB3?.bonificacoes||[];const d0=pro
     S.eventosAplicados.push(key)});
   if(novos.length){save();toast('Lançado automaticamente: '+novos.join('; '))}}
 /* ---------- Metas táticas (vindas do analista) ---------- */
-function analiseValida(){const a=S.cache.analise;return a&&a.metasTaticas&&a.data&&diasEntre(a.data,HOJE())<=45?a:null}
+function analiseValida(){const a=S.cache.analise;return a&&a.modelo===2&&a.metasTaticas&&a.data&&diasEntre(a.data,HOJE())<=45?a:null}
 function metasAtuais(){const a=analiseValida();const M={...S.config.metas};if(a)Object.keys(M).forEach(k=>{if(a.metasTaticas[k]!=null)M[k]=+a.metasTaticas[k]});return M}
-/* ---------- Previdência (PGBL): fora das faixas táticas ---------- */
+/* ---------- Previdência (PGBL): dentro da carteira de ativos reais ---------- */
 function prevCalc(pl){const f=S.cache.prev?.fundos?.[pl.cnpj];const serie=f?.serie||[];const ult=f?.ultima;
   const cotaEm=d=>{for(const [dt,c] of serie)if(dt>=d)return c;return null};let cotas=0,semCota=0,aplic=0;
   (pl.aportes||[]).forEach(a=>{aplic+=+a.valor||0;const c=cotaEm(a.data);if(c)cotas+=a.valor/c;else semCota+=+a.valor||0});
@@ -394,9 +395,9 @@ function prevAno(ano){return (S.previdencia||[]).filter(p=>p.tipo==='PGBL').flat
 function totais(){
   const P=posicoes();const cls={rf:0,caixa:0,acoes:0,fii:0,eua:0,cripto:0,prev:0};let varDia=0,falta=0;
   Object.values(P).forEach(p=>{if(p.valor!=null){cls[p.a.classe]+=p.valor;varDia+=p.varDia}else if(p.qtd>0)falta++});
-  S.rendaFixa.forEach(r=>{const v=valorRF(r);if(!isNaN(v))cls[r.grupo]+=v});
+  S.rendaFixa.forEach(r=>{const v=valorRF(r);if(!isNaN(v))cls[r.indexador==='USD'?'cripto':r.grupo]+=v}); // USDT/USDC = munição da carteira cripto
   (S.previdencia||[]).forEach(pl=>cls.prev+=prevCalc(pl).saldo);
-  const total=Object.values(cls).reduce((a,b)=>a+b,0);const totalAloc=total-cls.prev; // base das faixas: sem a previdência
+  const total=Object.values(cls).reduce((a,b)=>a+b,0);const totalAloc=total-cls.cripto; // base das faixas: carteira de ativos reais (sem cripto, com PGBL)
   const grp={};Object.entries(GRUPOS).forEach(([k,g])=>grp[k]=g.cls.reduce((s,c)=>s+cls[c],0));
   return {P,cls,grp,total,totalAloc,varDia,falta};
 }
@@ -461,11 +462,11 @@ function rGeral(T){const el=document.getElementById('s-geral');const M=metasAtua
     <div class="card kpi"><div class="l">Patrimônio em BTC</div><div class="v">${totBTC?mq(nf(totBTC,4))+' ₿':'—'}</div></div>
     <div class="card kpi"><div class="l">Proventos 12 meses</div><div class="v">${brl(prov12)}</div><div class="sub">a receber: ${brl(aReceber)}</div></div>
   </div>
-  <div class="card" style="margin-top:12px"><h2>Alocação por classe — atual × meta</h2><div class="tbl" style="border:none"><table>
+  <div class="card" style="margin-top:12px"><h2>Carteira de ativos reais — atual × meta</h2><div class="tbl" style="border:none"><table>
     <tr><th>Classe</th><th>Valor</th><th>Atual</th><th>Meta</th><th>Desvio</th><th class="l">Atual (barra) × meta (traço)</th><th class="l">Status</th></tr>${rows}
-    <tr class="tot"><td>Total das faixas</td><td>${brl(T.totalAloc)}</td><td>100%</td><td>${pct(Object.values(M).reduce((a,b)=>a+ +b,0)/100,0)}</td><td></td><td></td><td></td></tr>
-    ${T.cls.prev?`<tr><td><span class="dot" style="background:var(--c-prev)"></span>Previdência <span class="muted">(fora das faixas)</span></td><td>${brl(T.cls.prev)}</td><td class="muted" colspan="5">${pct(T.cls.prev/T.total)} do patrimônio total · longo prazo, não entra no aporte mensal</td></tr>`:''}</table></div>
-    <div class="note">Alerta quando o desvio passa de ±${S.config.alerta} pontos percentuais. Caixa & Recebíveis conta dentro da meta de Renda Fixa.</div></div>
+    <tr class="tot"><td>Carteira de ativos reais</td><td>${brl(T.totalAloc)}</td><td>100%</td><td>${pct(Object.values(M).reduce((a,b)=>a+ +b,0)/100,0)}</td><td></td><td></td><td></td></tr>
+    <tr><td><span class="dot" style="background:var(--c-cripto)"></span>Cripto <span class="muted">(carteira à parte)</span></td><td>${brl(T.cls.cripto)}</td><td class="muted" colspan="5">${pct(T.total?T.cls.cripto/T.total:0)} do patrimônio total · inclui USDT/USDC · só se mexe pelos gatilhos de ciclo (aba Analista)</td></tr></table></div>
+    <div class="note">Alerta quando o desvio passa de ±${S.config.alerta} pontos percentuais. Caixa & Recebíveis conta dentro da meta de Renda Fixa. Os % são sobre a carteira de ativos reais (tudo menos cripto); o PGBL conta dentro.</div></div>
   <div class="split" style="margin-top:12px">
     <div class="card"><h2>Maiores altas ${perLabel()}</h2><table>${mv(Ps.slice(0,5))||'<tr><td class="muted">Sem cotações</td></tr>'}</table></div>
     <div class="card"><h2>Maiores quedas ${perLabel()}</h2><table>${mv(Ps.slice(-5).reverse())||'<tr><td class="muted">Sem cotações</td></tr>'}</table></div>
@@ -628,7 +629,7 @@ function rAporte(T){const el=document.getElementById('s-aporte');const M=metasAt
   const ks=Object.keys(GRUPOS);const novoTotal=T.totalAloc+A;
   const dC=distribuir(A,ks.map(k=>({k,atual:T.grp[k],alvo:(M[k]||0)/100*novoTotal,peso:+M[k]||0})));
   let html=`<div class="card"><h2>Calculadora de aporte</h2><form class="row" id="fAp"><label>Valor do aporte (R$)<input name="v" type="text" inputmode="decimal" data-num data-dec="2" step="any" value="${A}" style="width:160px"></label><button class="primary">Calcular</button></form>
-  <div class="note">Só compra, nunca vende: o dinheiro vai para as classes abaixo da meta, proporcional ao quanto falta. Dentro da classe, mesma lógica pela meta de cada ativo (convicção). Ações/FIIs acima do preço-teto ficam de fora.</div></div>
+  <div class="note">Só compra, nunca vende, e só na carteira de ativos reais (cripto fica de fora: segue os gatilhos de ciclo). O dinheiro vai para as classes abaixo da meta, proporcional ao quanto falta. Dentro da classe, mesma lógica pela meta de cada ativo (convicção). Ações/FIIs acima do preço-teto ficam de fora.</div></div>
   <div class="card" style="margin-top:12px"><h2>1. Por classe</h2><table><tr><th>Classe</th><th>Atual</th><th>Meta após aporte</th><th>Aportar</th></tr>
   ${ks.map((k,i)=>`<tr><td><span class="dot" style="background:${GRUPOS[k].c}"></span>${GRUPOS[k].n}</td><td>${brl(T.grp[k])}</td><td>${brl((M[k]||0)/100*novoTotal)}</td><td><b>${brl(dC[i])}</b></td></tr>`).join('')}</table></div>`;
   const det=(cls,valor)=>{if(valor<0.01)return '';const MC=metaClasse(cls);const ps=Object.values(T.P).filter(p=>p.a.classe===cls&&MC[p.a.ticker]>0&&p.preco);
@@ -639,7 +640,8 @@ function rAporte(T){const el=document.getElementById('s-aporte');const M=metasAt
       return `<tr><td><b>${esc(p.a.ticker)}</b></td><td>${brlP(p.preco)}</td><td>${brl(d[i])}</td><td><b>${cri?nf(q,8):q}</b></td><td>${brl(v)}</td></tr>`}).join('');
     return `<div class="card" style="margin-top:12px"><h2>${CLASSES[cls].n} — ${brl(valor)}</h2><table><tr><th>Ativo</th><th>Preço</th><th>Valor ideal</th><th>Comprar (qtd)</th><th>Valor da compra</th></tr>${rows}
     <tr class="tot"><td>Sobra (cotas inteiras)</td><td></td><td></td><td></td><td>${brl(valor-usado)}</td></tr></table>${fora.length?`<div class="note">Fora por estar acima do teto: ${fora.map(p=>esc(p.a.ticker)).join(', ')}</div>`:''}</div>`};
-  const iK=k=>ks.indexOf(k);html+=det('acoes',dC[iK('acoes')])+det('fii',dC[iK('fii')])+det('eua',dC[iK('eua')])+det('cripto',dC[iK('cripto')]);
+  const iK=k=>ks.indexOf(k);html+=det('acoes',dC[iK('acoes')])+det('fii',dC[iK('fii')])+det('eua',dC[iK('eua')]);
+  if(dC[iK('prev')]>=0.01)html+=`<div class="card" style="margin-top:12px"><h2>Previdência (PGBL) — ${brl(dC[iK('prev')])}</h2><div class="note">Aporte manual no plano (Inter) e lançar na aba Previdência. O teto do ano (12% da renda) vem antes da meta: o relatório diz quanto e de onde.</div></div>`;
   if(dC[0]>=0.01)html+=`<div class="card" style="margin-top:12px"><h2>Renda Fixa + Caixa — ${brl(dC[0])}</h2><div class="note">Aplicar em renda fixa (ex.: CDB) e depois atualizar o saldo na aba Renda fixa &amp; Caixa.</div></div>`;
   el.innerHTML=html;
   document.getElementById('fAp').onsubmit=e=>{e.preventDefault();ultimoAporte=numBR(new FormData(e.target).get('v'))||0;render()};
@@ -678,8 +680,9 @@ function screener(){const F=S.cache.fundamentos;if(!F)return null;const meus=new
 function rAnalista(T){const el=document.getElementById('s-analista');const A=S.cache.analise;const val=analiseValida();const M=metasAtuais();const F=S.config.faixas||FAIXAS0;
   const SIN={verde:'🟢',amarelo:'🟡',vermelho:'🔴',g:'🟢',y:'🟡',r:'🔴'};
   let h=`<div class="card"><h2>Relatório do analista</h2>${A?`<div class="sub">Último relatório: <b>${dbr(A.data)}</b>${val?'':' <span class="tag warn">mais de 45 dias — metas táticas ignoradas</span>'}${A.relatorioUrl?` · <a href="${esc(A.relatorioUrl)}" target="_blank" rel="noopener">abrir relatório completo</a>`:''}</div>${A.resumo?`<p>${esc(A.resumo)}</p>`:''}`:'<p class="muted">Ainda não há relatório. O primeiro sai da análise que vamos fazer juntos; depois, todo dia 7, antes do aporte do dia 10.</p>'}</div>`;
-  h+=`<div class="card" style="margin-top:12px"><h2>${tip('Meta tática')} por classe</h2><div class="tbl" style="border:none"><table><tr><th>Classe</th><th>Faixa</th><th>Neutro</th><th>Meta do mês</th><th>Atual</th><th class="l">Por quê</th></tr>
+  h+=`<div class="card" style="margin-top:12px"><h2>${tip('Meta tática')} por classe — carteira de ativos reais</h2><div class="tbl" style="border:none"><table><tr><th>Classe</th><th>Faixa</th><th>Neutro</th><th>Meta do mês</th><th>Atual</th><th class="l">Por quê</th></tr>
     ${Object.entries(GRUPOS).map(([k,g])=>{const f=F[k]||{};const a=T.totalAloc?T.grp[k]/T.totalAloc:0;return `<tr><td><span class="dot" style="background:${g.c}"></span>${g.n}</td><td>${nf(f.min,0)}–${nf(f.max,0)}%</td><td>${nf(S.config.metas[k],0)}%</td><td><b>${nf(M[k],1)}%</b></td><td>${pct(a)}</td><td class="l" style="white-space:normal;min-width:260px">${esc(val?.justificativas?.[k]||'—')}</td></tr>`}).join('')}</table></div></div>`;
+  if(val?.cripto?.gatilhos?.length){const C=val.cripto;h+=`<div class="card" style="margin-top:12px"><h2>Carteira cripto — gatilhos de ciclo</h2><div class="sub">Valor: <b>${brl(T.cls.cripto)}</b> (${pct(T.total?T.cls.cripto/T.total:0)} do patrimônio, com USDT/USDC)${C.fase?` · Fase: <b>${esc(C.fase)}</b>`:''}</div>${C.resumo?`<p>${esc(C.resumo)}</p>`:''}<div class="tbl" style="border:none"><table><tr><th class="l">Movimento</th><th class="l">Gatilho</th><th class="l">Hoje</th><th>Status</th></tr>${C.gatilhos.map(g=>`<tr><td class="l" style="white-space:normal"><b>${esc(g.movimento)}</b></td><td class="l" style="white-space:normal;min-width:220px">${esc(g.gatilho)}</td><td class="l" style="white-space:normal;min-width:180px">${esc(g.hoje||'')}</td><td>${g.atingido?'<span class="tag warn">atingido</span>':'<span class="tag">aguardando</span>'}</td></tr>`).join('')}</table></div><div class="note">Cripto não entra nas faixas nem no aporte mensal. O relatório confere os gatilhos todo mês e avisa quando algum for atingido.</div></div>`}
   if(A?.aporte?.itens?.length)h+=`<div class="card" style="margin-top:12px"><h2>Aporte sugerido — ${brl(A.aporte.valor)}</h2><table><tr><th>Ativo</th><th>Valor</th><th class="l">Motivo</th></tr>${A.aporte.itens.map(x=>`<tr><td><b>${esc(x.ticker)}</b></td><td>${brl(x.valor)}</td><td class="l" style="white-space:normal">${esc(x.motivo||'')}</td></tr>`).join('')}</table></div>`;
   if(A?.ativos&&Object.keys(A.ativos).length)h+=`<div class="card" style="margin-top:12px"><h2>Sinal por ativo</h2><div class="tbl" style="border:none"><table><tr><th>Ativo</th><th>Sinal</th><th>Teto sugerido</th><th class="l">Tese</th><th class="l">O que me faria estar errado</th></tr>${Object.entries(A.ativos).map(([t,x])=>`<tr><td><b>${esc(t)}</b></td><td>${SIN[x.sinal]||'—'}</td><td>${x.tetoSugerido?brl(x.tetoSugerido):'—'}</td><td class="l" style="white-space:normal;min-width:240px">${esc(x.tese||'')}</td><td class="l" style="white-space:normal;min-width:200px">${esc(x.contra||'')}</td></tr>`).join('')}</table></div></div>`;
   if(A?.alertas?.length)h+=`<div class="card" style="margin-top:12px"><h2>Alertas</h2><ul>${A.alertas.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`;
@@ -733,7 +736,7 @@ function cfgMetas(T){const F=S.config.faixas||FAIXAS0;const M=S.config.metas;con
   const inp=(k,c,v)=>`<input data-fx="${k}" data-c="${c}" type="text" inputmode="decimal" data-num value="${v}" style="width:${c==='neutro'?70:58}px;${c==='neutro'?'font-size:18px;font-weight:700':''}">`;
   return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0">Faixa de cada classe</h2>
     <span class="tag ${Math.abs(soma-100)<0.01?'pos':'neg'}" id="somaTag" style="font-size:13px;padding:3px 10px">Soma dos neutros: ${nf(soma,1)}% ${Math.abs(soma-100)<0.01?'✓':'— precisa fechar 100%'}</span></div>
-    <div class="note" style="margin-top:6px">Cada classe tem um <b>mínimo</b>, um <b>neutro</b> e um <b>máximo</b>. O analista define todo mês a <b>meta tática</b> dentro da faixa (mais renda fixa quando nada está barato, mais bolsa quando está) — é ela que o aporte segue. Sem relatório recente, vale o neutro.</div>
+    <div class="note" style="margin-top:6px">As faixas valem para a <b>carteira de ativos reais</b> (tudo menos cripto, com o PGBL dentro). Cada classe tem um <b>mínimo</b>, um <b>neutro</b> e um <b>máximo</b>. O analista define todo mês a <b>meta tática</b> dentro da faixa (mais renda fixa quando nada está barato, mais bolsa quando está) — é ela que o aporte segue. Sem relatório recente, vale o neutro.</div>
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(230px,1fr));margin-top:12px">
     ${Object.entries(GRUPOS).map(([k,g])=>{const a=T.totalAloc?T.grp[k]/T.totalAloc:0;const f=F[k]||{min:0,neutro:M[k]||0,max:100};const mt=(MT[k]||0)/100;return `<div class="card" style="background:var(--soft)">
       <div style="display:flex;align-items:center;gap:8px"><span class="dot" style="background:${g.c}"></span><b>${g.n}</b></div>
