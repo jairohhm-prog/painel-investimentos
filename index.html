@@ -133,9 +133,9 @@ h3{font-size:13px;margin:16px 0 8px;color:var(--muted);text-transform:uppercase;
 /* ================= ESTADO ================= */
 const KEY='painelInvest_v1';
 const HOJE=()=>new Date().toISOString().slice(0,10);
-const CLASSES={rf:{n:'Renda Fixa',c:'var(--c-rf)'},caixa:{n:'Caixa & Recebíveis',c:'var(--c-caixa)'},acoes:{n:'Ações',c:'var(--c-acoes)'},fii:{n:'FIIs',c:'var(--c-fii)'},eua:{n:'EUA (ETF)',c:'var(--c-eua)'},cripto:{n:'Cripto',c:'var(--c-cripto)'},prev:{n:'Previdência',c:'var(--c-prev)'}};
+const CLASSES={rf:{n:'Renda Fixa',c:'var(--c-rf)'},caixa:{n:'Caixa & Recebíveis',c:'var(--c-caixa)'},acoes:{n:'Ações',c:'var(--c-acoes)'},fii:{n:'FIIs',c:'var(--c-fii)'},eua:{n:'EUA',c:'var(--c-eua)'},cripto:{n:'Cripto',c:'var(--c-cripto)'},prev:{n:'Previdência',c:'var(--c-prev)'}};
 // Grupos de meta: Renda Fixa + Caixa compartilham a mesma meta
-const GRUPOS={rfc:{n:'Renda Fixa + Caixa',cls:['rf','caixa'],c:'var(--c-rf)'},acoes:{n:'Ações',cls:['acoes'],c:'var(--c-acoes)'},fii:{n:'FIIs',cls:['fii'],c:'var(--c-fii)'},eua:{n:'EUA (ETF)',cls:['eua'],c:'var(--c-eua)'},prev:{n:'Previdência (PGBL)',cls:['prev'],c:'var(--c-prev)'}};
+const GRUPOS={rfc:{n:'Renda Fixa + Caixa',cls:['rf','caixa'],c:'var(--c-rf)'},acoes:{n:'Ações',cls:['acoes'],c:'var(--c-acoes)'},fii:{n:'FIIs',cls:['fii'],c:'var(--c-fii)'},eua:{n:'EUA',cls:['eua'],c:'var(--c-eua)'},prev:{n:'Previdência (PGBL)',cls:['prev'],c:'var(--c-prev)'}};
 // Modelo 2 (09/11/2026): as faixas valem para a CARTEIRA DE ATIVOS REAIS (tudo menos cripto, com o PGBL dentro). Cripto (+ USDC/USDT) é uma carteira à parte, que só se mexe por gatilhos de ciclo.
 const DOLAR=c=>c==='cripto'||c==='eua'; // classes cotadas em dólar
 const FAIXAS0={rfc:{min:25,neutro:35,max:50},acoes:{min:15,neutro:25,max:35},fii:{min:10,neutro:20,max:25},eua:{min:0,neutro:10,max:20},prev:{min:0,neutro:10,max:20}};
@@ -490,7 +490,7 @@ function tabelaClasse(T,cls){
 function rAtivos(T){document.getElementById('s-ativos').innerHTML=`
   <h3>Ações</h3>${tabelaClasse(T,'acoes')}
   <h3>FIIs</h3>${tabelaClasse(T,'fii')}
-  ${S.ativos.some(a=>a.classe==='eua')?`<h3>EUA (ETF)</h3>${tabelaClasse(T,'eua')}`:''}
+  ${S.ativos.some(a=>a.classe==='eua')?`<h3>EUA</h3>${tabelaClasse(T,'eua')}`:''}
   <h3>Cripto</h3>${tabelaClasse(T,'cripto')}
   <div class="note">Preço médio vem dos lançamentos; o do saldo inicial é o da corretora (ou o preço de ${dbr(S.config.inicio)} quando não informado) e pode ser editado na aba Lançamentos. Resultado = valor atual − custo + proventos recebidos + vendas realizadas. Metas (pela convicção) e preços-teto são editados em Configurações. A coluna de variação segue o período escolhido no topo (Dia, Mês, Ano, 12 meses): é a variação de preço do ativo — em cripto, já em reais (variação em dólar combinada com a do dólar) — e o valor em R$ aplica essa variação à posição atual.</div>`}
 
@@ -775,7 +775,7 @@ function cfgClasse(T,cls){const MC=metaClasse(cls);const L=S.ativos.filter(a=>a.
   <label>Convicção<select name="conv">${CONV_TXT.map((t,i)=>`<option value="${i}"${i===3?' selected':''}>${t}</option>`).join('')}</select></label><button class="primary">Adicionar</button></form>
   <div class="note">O ticker é conferido na brapi antes de salvar. Depois lance a compra na aba Lançamentos.</div></div></div>`}
 function cfgCripto(T,cls){const eua=cls==='eua';const L=S.ativos.filter(a=>a.classe===cls);const soma=L.reduce((s,a)=>s+(+a.peso||0),0);const tot=L.reduce((s,a)=>s+(T.P[a.ticker]?.valor||0),0);
-  return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h2 style="margin:0">${eua?'EUA (ETF) — meta de cada ETF':'Cripto — meta de cada moeda'}</h2>${L.length?`<span class="tag ${Math.abs(soma-100)<0.01?'pos':'neg'}" style="font-size:13px;padding:3px 10px">Soma: ${nf(soma,1)}% ${Math.abs(soma-100)<0.01?'✓':'— precisa fechar 100%'}</span>`:''}</div>
+  return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h2 style="margin:0">${eua?'EUA — meta de cada ETF':'Cripto — meta de cada moeda'}</h2>${L.length?`<span class="tag ${Math.abs(soma-100)<0.01?'pos':'neg'}" style="font-size:13px;padding:3px 10px">Soma: ${nf(soma,1)}% ${Math.abs(soma-100)<0.01?'✓':'— precisa fechar 100%'}</span>`:''}</div>
   ${L.length?`<div class="tbl" style="border:none;margin-top:10px"><table><tr><th>${eua?'ETF':'Moeda'}</th><th>Meta (%)</th><th>Atual</th><th>Falta p/ meta</th><th>Preço (US$)</th>${eua?'':'<th class="l">ID CoinGecko</th>'}<th></th></tr>
   ${L.map(a=>{const at=tot?(T.P[a.ticker]?.valor||0)/tot:0;return `<tr data-id="${a.id}"><td><b>${esc(a.ticker)}</b> <span class="muted">${esc(a.nome)}</span></td><td><input data-f="peso" type="text" inputmode="decimal" data-num step="0.5" value="${a.peso}" style="width:80px"></td><td>${pct(at)}</td><td class="${sgn(a.peso/100-at)}">${pct(a.peso/100-at)}</td><td>${usd(S.cache.quotes[a.ticker]?.p)}</td>${eua?'':`<td class="l"><input class="w" data-f="cgId" value="${esc(a.cgId)}" style="width:200px;font-size:12px"></td>`}<td><button class="small danger" data-del="${a.id}">✕</button></td></tr>`}).join('')}</table></div>`:`<p class="muted">Nenhum ${eua?'ETF':'ativo'} cadastrado ainda.</p>`}
   <h3>Adicionar ${eua?'ETF':'moeda'}</h3><form class="row fAdd" data-cls="${cls}"><label>Ticker<input name="ticker" required style="width:90px" placeholder="${eua?'VOO':'LINK'}"></label><label>Nome<input name="nome" style="width:150px"></label>${eua?'':'<label>ID CoinGecko<input name="cgId" required style="width:180px" placeholder="chainlink"></label>'}<label>Meta (%)<input name="peso" type="text" inputmode="decimal" data-num step="0.5" value="0" style="width:80px"></label><button class="primary">Adicionar</button></form>
